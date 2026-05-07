@@ -1,7 +1,6 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytz
-import pytest
 
 from app.utils.time_utils import (
     apply_time_keyword,
@@ -101,6 +100,7 @@ def test_in_minutes():
 def test_format_remind_at_tomorrow():
     tz = pytz.timezone("Europe/Amsterdam")
     from datetime import timedelta
+
     tomorrow = datetime.now(tz).date() + timedelta(days=1)
     dt = tz.localize(datetime(tomorrow.year, tomorrow.month, tomorrow.day, 9, 0))
     text = format_remind_at(dt, "Europe/Amsterdam")

@@ -4,11 +4,15 @@ import os
 
 import uvicorn
 from fastapi import FastAPI
+from sqlalchemy import select
 
-from app.adapters.http.api import router as capture_router, set_container
+from app.adapters.http.api import router as capture_router
+from app.adapters.http.api import set_container
 from app.adapters.telegram.bot import create_bot, create_dispatcher
 from app.config import settings
 from app.container import Container
+from app.domain.enums import TaskStatus
+from app.domain.models import Task
 from app.scheduler.scheduler import ReminderScheduler
 from app.storage.db import create_engine, create_session_factory, init_db
 
@@ -40,16 +44,10 @@ async def main() -> None:
     scheduler.start()
 
     # Re-schedule pending reminders on startup
-    tasks = await container.task_service.list_all("*")  # won't work — load all tasks
     # Build user_id_map from all active tasks
     user_id_map: dict[int, str] = {}
-    from app.domain.enums import TaskStatus
-    from sqlalchemy import select
-    from app.domain.models import Task
     async with session_factory() as session:
-        result = await session.execute(
-            select(Task).where(Task.status == TaskStatus.ACTIVE)
-        )
+        result = await session.execute(select(Task).where(Task.status == TaskStatus.ACTIVE))
         for task in result.scalars().all():
             if task.id:
                 user_id_map[task.id] = task.user_id

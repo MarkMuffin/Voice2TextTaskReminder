@@ -1,29 +1,29 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     ACTIVE = "active"
     DONE = "done"
     CANCELLED = "cancelled"
 
 
-class ReminderStatus(str, Enum):
+class ReminderStatus(StrEnum):
     PENDING = "pending"
     SENT = "sent"
     CANCELLED = "cancelled"
 
 
-class InputSource(str, Enum):
+class InputSource(StrEnum):
     TELEGRAM = "telegram"
     HTTP = "http"
 
 
-class InputType(str, Enum):
+class InputType(StrEnum):
     VOICE = "voice"
     TEXT = "text"
 
 
-class IntentType(str, Enum):
+class IntentType(StrEnum):
     CREATE_REMINDER = "create_reminder"
     LIST_TASKS = "list_tasks"
     COMPLETE_TASK = "complete_task"

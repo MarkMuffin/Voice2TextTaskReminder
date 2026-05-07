@@ -1,7 +1,7 @@
 import logging
 from typing import TYPE_CHECKING
 
-from aiogram import Bot, Router, F
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
@@ -44,6 +44,8 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
 
     @r.message(Command("list"))
     async def cmd_list(message: Message) -> None:
+        if message.from_user is None:
+            return
         user_id = str(message.from_user.id)
         tasks = await container.task_service.list_active(user_id)
         text = container.renderer.task_list(tasks, "Активные задачи")
@@ -51,6 +53,8 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
 
     @r.message(Command("done"))
     async def cmd_done(message: Message) -> None:
+        if message.from_user is None:
+            return
         user_id = str(message.from_user.id)
         tasks = await container.task_service.list_done(user_id)
         text = container.renderer.task_list(tasks, "Выполненные задачи")
@@ -58,6 +62,8 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
 
     @r.message(F.voice)
     async def handle_voice(message: Message) -> None:
+        if message.from_user is None or message.voice is None:
+            return
         user_id = str(message.from_user.id)
         tz = settings.default_timezone
 
@@ -65,7 +71,9 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
 
         try:
             file = await bot.get_file(message.voice.file_id)
+            assert file.file_path is not None
             file_bytes = await bot.download_file(file.file_path)
+            assert file_bytes is not None
             audio_bytes = file_bytes.read()
 
             transcript, intent = await container.capture_service.process_voice(
@@ -88,6 +96,8 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
 
     @r.message(F.text & ~F.text.startswith("/"))
     async def handle_text(message: Message) -> None:
+        if message.from_user is None or message.text is None:
+            return
         user_id = str(message.from_user.id)
         tz = settings.default_timezone
         text = message.text.strip()
@@ -128,7 +138,7 @@ async def _send_result(message: Message, result, container, user_id: str) -> Non
         case IntentType.CREATE_REMINDER:
             if r.task:
                 text, kb = container.renderer.task_created(r.task)
-                sent = await message.answer(text, reply_markup=kb, parse_mode="HTML")
+                await message.answer(text, reply_markup=kb, parse_mode="HTML")
                 # Schedule reminder in APScheduler
                 if r.task.remind_at and r.reminder:
                     container.scheduler.schedule_reminder(
@@ -140,26 +150,18 @@ async def _send_result(message: Message, result, container, user_id: str) -> Non
 
         case IntentType.LIST_TASKS:
             tasks = r.tasks or []
-            await message.answer(
-                container.renderer.task_list(tasks), parse_mode="HTML"
-            )
+            await message.answer(container.renderer.task_list(tasks), parse_mode="HTML")
 
         case IntentType.COMPLETE_TASK:
             if r.task:
-                await message.answer(
-                    container.renderer.task_completed(r.task), parse_mode="HTML"
-                )
+                await message.answer(container.renderer.task_completed(r.task), parse_mode="HTML")
 
         case IntentType.SNOOZE_TASK:
             if r.task:
-                await message.answer(
-                    container.renderer.task_snoozed(r.task), parse_mode="HTML"
-                )
+                await message.answer(container.renderer.task_snoozed(r.task), parse_mode="HTML")
 
         case IntentType.CANCEL_TASK:
             if r.task:
-                await message.answer(
-                    container.renderer.task_cancelled(r.task), parse_mode="HTML"
-                )
+                await message.answer(container.renderer.task_cancelled(r.task), parse_mode="HTML")
         case _:
             await message.answer(container.renderer.error("Неизвестная команда."))

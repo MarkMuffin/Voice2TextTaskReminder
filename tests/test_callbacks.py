@@ -2,20 +2,19 @@
 Tests for Telegram callback logic using the container directly.
 We don't test aiogram internals, but the service layer that callbacks invoke.
 """
-from datetime import datetime, timezone, timedelta
 
-import pytest
+from datetime import UTC, datetime, timedelta
 
 from app.domain.enums import ReminderStatus, TaskStatus
 from app.domain.schemas import TaskCreate
-from app.utils.time_utils import in_minutes, tomorrow_morning
+from app.utils.time_utils import in_minutes, to_utc_naive, tomorrow_morning
 
 
 async def test_complete_task_via_service(container):
     task = await container.task_service.create_task(
         TaskCreate(user_id="cb_user", title="Callback test task")
     )
-    remind_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    remind_at = datetime.now(UTC) + timedelta(hours=1)
     reminder = await container.reminder_service.schedule_reminder(task.id, remind_at)
 
     # Simulate callback: complete
@@ -31,7 +30,7 @@ async def test_snooze_10min_via_service(container):
     task = await container.task_service.create_task(
         TaskCreate(user_id="cb_user", title="Snooze test task")
     )
-    original_remind = datetime.now(timezone.utc) + timedelta(hours=1)
+    original_remind = datetime.now(UTC) + timedelta(hours=1)
     old_reminder = await container.reminder_service.schedule_reminder(task.id, original_remind)
 
     # Simulate "snooze 10 min" callback
@@ -53,8 +52,8 @@ async def test_snooze_tomorrow_via_service(container):
     updated_task = await container.task_service.snooze_task(task.id, snooze_until)
     new_reminder = await container.reminder_service.reschedule(task.id, snooze_until)
 
-    assert updated_task.remind_at.date() > datetime.now(timezone.utc).date()
-    assert new_reminder.remind_at.hour == 9
+    assert updated_task.remind_at.date() > datetime.now(UTC).date()
+    assert new_reminder.remind_at.hour == to_utc_naive(snooze_until).hour
 
 
 async def test_cancel_task_via_service(container):
@@ -62,7 +61,7 @@ async def test_cancel_task_via_service(container):
         TaskCreate(user_id="cb_user", title="Cancel me")
     )
     await container.reminder_service.schedule_reminder(
-        task.id, datetime.now(timezone.utc) + timedelta(hours=1)
+        task.id, datetime.now(UTC) + timedelta(hours=1)
     )
 
     updated = await container.task_service.cancel_task(task.id)

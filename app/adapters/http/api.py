@@ -64,7 +64,7 @@ async def capture_text(
         )
     except Exception as exc:
         logger.exception("capture/text error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/audio", response_model=CaptureResponse)
@@ -105,7 +105,7 @@ async def capture_audio(
         )
     except Exception as exc:
         logger.exception("capture/audio error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/health")

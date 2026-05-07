@@ -1,11 +1,12 @@
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.adapters.http.api import router as capture_router, set_container
+from app.adapters.http.api import router as capture_router
+from app.adapters.http.api import set_container
 from app.domain.enums import IntentType
 from app.domain.schemas import ParsedIntent
 from app.providers.llm.mock import MockIntentParser
-from fastapi import FastAPI
 
 
 def make_app(container):
@@ -64,7 +65,7 @@ async def test_capture_text_list_tasks(client, container):
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
-    assert data["intent"] == "IntentType.LIST_TASKS"
+    assert data["intent"] == "list_tasks"
 
 
 async def test_capture_text_requires_confirmation(client, container):

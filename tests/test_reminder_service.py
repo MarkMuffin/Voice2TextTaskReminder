@@ -1,8 +1,8 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.domain.enums import ReminderStatus, TaskStatus
+from app.domain.enums import ReminderStatus
 from app.domain.schemas import TaskCreate
 from app.services.reminder_service import ReminderService
 from app.services.task_service import TaskService
@@ -21,7 +21,7 @@ def reminder_service(session_factory):
 
 async def test_schedule_reminder(task_service, reminder_service):
     task = await task_service.create_task(TaskCreate(user_id="u1", title="Test"))
-    remind_at = datetime(2025, 6, 1, 9, 0, tzinfo=timezone.utc)
+    remind_at = datetime(2025, 6, 1, 9, 0, tzinfo=UTC)
     reminder = await reminder_service.schedule_reminder(task.id, remind_at)
 
     assert reminder.id is not None
@@ -33,8 +33,8 @@ async def test_schedule_reminder(task_service, reminder_service):
 
 async def test_get_pending(task_service, reminder_service):
     task = await task_service.create_task(TaskCreate(user_id="u1", title="Test"))
-    future = datetime.now(timezone.utc) + timedelta(hours=1)
-    past = datetime.now(timezone.utc) - timedelta(hours=1)
+    future = datetime.now(UTC) + timedelta(hours=1)
+    past = datetime.now(UTC) - timedelta(hours=1)
 
     await reminder_service.schedule_reminder(task.id, future)
     await reminder_service.schedule_reminder(task.id, past)
@@ -45,13 +45,13 @@ async def test_get_pending(task_service, reminder_service):
 
 async def test_get_pending_before(task_service, reminder_service):
     task = await task_service.create_task(TaskCreate(user_id="u1", title="Test"))
-    past = datetime.now(timezone.utc) - timedelta(minutes=5)
-    future = datetime.now(timezone.utc) + timedelta(hours=1)
+    past = datetime.now(UTC) - timedelta(minutes=5)
+    future = datetime.now(UTC) + timedelta(hours=1)
 
     await reminder_service.schedule_reminder(task.id, past)
     await reminder_service.schedule_reminder(task.id, future)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     due = await reminder_service.get_pending(before=now)
     assert len(due) == 1
     assert due[0].remind_at.replace(tzinfo=None) <= now.replace(tzinfo=None)
@@ -59,9 +59,7 @@ async def test_get_pending_before(task_service, reminder_service):
 
 async def test_mark_sent(task_service, reminder_service):
     task = await task_service.create_task(TaskCreate(user_id="u1", title="Test"))
-    reminder = await reminder_service.schedule_reminder(
-        task.id, datetime(2025, 1, 1, tzinfo=timezone.utc)
-    )
+    reminder = await reminder_service.schedule_reminder(task.id, datetime(2025, 1, 1, tzinfo=UTC))
     await reminder_service.mark_sent(reminder.id)
 
     updated = await reminder_service.get_reminder(reminder.id)
@@ -71,12 +69,8 @@ async def test_mark_sent(task_service, reminder_service):
 
 async def test_cancel_task_reminders(task_service, reminder_service):
     task = await task_service.create_task(TaskCreate(user_id="u1", title="Test"))
-    r1 = await reminder_service.schedule_reminder(
-        task.id, datetime(2025, 1, 1, tzinfo=timezone.utc)
-    )
-    r2 = await reminder_service.schedule_reminder(
-        task.id, datetime(2025, 1, 2, tzinfo=timezone.utc)
-    )
+    r1 = await reminder_service.schedule_reminder(task.id, datetime(2025, 1, 1, tzinfo=UTC))
+    r2 = await reminder_service.schedule_reminder(task.id, datetime(2025, 1, 2, tzinfo=UTC))
 
     await reminder_service.cancel_task_reminders(task.id)
 
@@ -88,8 +82,8 @@ async def test_cancel_task_reminders(task_service, reminder_service):
 
 async def test_reschedule(task_service, reminder_service):
     task = await task_service.create_task(TaskCreate(user_id="u1", title="Test"))
-    old_time = datetime(2025, 1, 1, tzinfo=timezone.utc)
-    new_time = datetime(2025, 1, 2, tzinfo=timezone.utc)
+    old_time = datetime(2025, 1, 1, tzinfo=UTC)
+    new_time = datetime(2025, 1, 2, tzinfo=UTC)
 
     old = await reminder_service.schedule_reminder(task.id, old_time)
     new_reminder = await reminder_service.reschedule(task.id, new_time)
