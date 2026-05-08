@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytz
@@ -8,6 +8,7 @@ from apscheduler.triggers.date import DateTrigger
 
 if TYPE_CHECKING:
     from aiogram import Bot
+
     from app.container import Container
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ class ReminderScheduler:
 
     async def load_pending(self, user_id_map: dict[int, str]) -> None:
         """On startup, re-schedule all pending reminders."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         pending = await self._container.reminder_service.get_pending()
         for reminder in pending:
             uid = user_id_map.get(reminder.task_id)
@@ -100,6 +101,7 @@ class ReminderScheduler:
             return
 
         from app.domain.enums import TaskStatus
+
         if task.status != TaskStatus.ACTIVE:
             return
 

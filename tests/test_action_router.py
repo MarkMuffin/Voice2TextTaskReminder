@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 import pytest
 
 from app.domain.enums import IntentType
@@ -62,7 +60,7 @@ async def test_route_list_tasks(router, task_service):
 
 
 async def test_route_complete_task(router, task_service):
-    task = await task_service.create_task(TaskCreate(user_id="user3", title="Do laundry"))
+    await task_service.create_task(TaskCreate(user_id="user3", title="Do laundry"))
     intent = ParsedIntent(
         intent=IntentType.COMPLETE_TASK,
         task_reference="laundry",
@@ -85,7 +83,7 @@ async def test_route_complete_task_not_found(router):
 
 
 async def test_route_cancel_task(router, task_service):
-    task = await task_service.create_task(TaskCreate(user_id="user4", title="Buy milk"))
+    await task_service.create_task(TaskCreate(user_id="user4", title="Buy milk"))
     intent = ParsedIntent(
         intent=IntentType.CANCEL_TASK,
         task_reference="milk",
@@ -97,7 +95,7 @@ async def test_route_cancel_task(router, task_service):
 
 
 async def test_route_snooze_task(router, task_service):
-    task = await task_service.create_task(TaskCreate(user_id="user5", title="Call mom"))
+    await task_service.create_task(TaskCreate(user_id="user5", title="Call mom"))
     intent = ParsedIntent(
         intent=IntentType.SNOOZE_TASK,
         task_reference="mom",

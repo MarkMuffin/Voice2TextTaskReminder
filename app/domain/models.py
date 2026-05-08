@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Float, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from app.domain.enums import InputSource, InputType, ReminderStatus, TaskStatus
+from app.domain.enums import InputSource, ReminderStatus, TaskStatus
 
 
 class Base(DeclarativeBase):

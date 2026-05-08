@@ -1,7 +1,6 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
-import pytz
 
 from app.domain.enums import TaskStatus
 from app.domain.schemas import TaskCreate
@@ -20,7 +19,7 @@ def sample_task_data():
         user_id="user_1",
         title="Купить молоко",
         raw_text="Напомни купить молоко завтра утром",
-        remind_at=datetime(2025, 1, 10, 9, 0, tzinfo=timezone.utc),
+        remind_at=datetime(2025, 1, 10, 9, 0, tzinfo=UTC),
         timezone="Europe/Amsterdam",
     )
 
@@ -67,7 +66,7 @@ async def test_list_done(task_service):
 
 async def test_snooze_task(task_service, sample_task_data):
     task = await task_service.create_task(sample_task_data)
-    new_time = datetime(2025, 2, 1, 18, 0, tzinfo=timezone.utc)
+    new_time = datetime(2025, 2, 1, 18, 0, tzinfo=UTC)
     updated = await task_service.snooze_task(task.id, new_time)
     assert updated.remind_at.replace(tzinfo=None) == new_time.replace(tzinfo=None)
 

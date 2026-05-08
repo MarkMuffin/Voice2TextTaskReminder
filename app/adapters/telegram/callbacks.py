@@ -2,8 +2,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from aiogram import Router
-from aiogram.types import CallbackQuery
 from aiogram.filters.callback_data import CallbackData
+from aiogram.types import CallbackQuery, Message
 
 if TYPE_CHECKING:
     from app.container import Container
@@ -28,6 +28,9 @@ def setup_callbacks(r: Router, container: "Container") -> None:
         action = callback_data.action
         user_id = str(query.from_user.id)
 
+        if not isinstance(query.message, Message):
+            return
+
         try:
             if action == "complete":
                 task = await container.task_service.complete_task(task_id)
@@ -44,14 +47,15 @@ def setup_callbacks(r: Router, container: "Container") -> None:
 
                 minutes = callback_data.minutes
                 if minutes >= 1440:
-                    snooze_until = tomorrow_morning(timezone=None)
+                    snooze_until = tomorrow_morning()
                 else:
                     snooze_until = in_minutes(minutes)
 
                 task = await container.task_service.snooze_task(task_id, snooze_until)
                 if task:
                     await container.reminder_service.reschedule(task_id, snooze_until)
-                    container.scheduler.reschedule_reminder(task_id, snooze_until, user_id)
+                    if container.scheduler is not None:
+                        container.scheduler.reschedule_reminder(task_id, snooze_until, user_id)
                     await query.message.edit_text(
                         container.renderer.task_snoozed(task), parse_mode="HTML"
                     )
@@ -61,7 +65,8 @@ def setup_callbacks(r: Router, container: "Container") -> None:
             elif action == "cancel":
                 task = await container.task_service.cancel_task(task_id)
                 await container.reminder_service.cancel_task_reminders(task_id)
-                container.scheduler.cancel_reminder(task_id)
+                if container.scheduler is not None:
+                    container.scheduler.cancel_reminder(task_id)
                 if task:
                     await query.message.edit_text(
                         container.renderer.task_cancelled(task), parse_mode="HTML"

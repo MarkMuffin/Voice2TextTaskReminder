@@ -1,10 +1,8 @@
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.domain.enums import InputSource, InputType, IntentType, ReminderStatus, TaskStatus
-
+from app.domain.enums import InputSource, IntentType, ReminderStatus, TaskStatus
 
 # ─── LLM parsed intent ──────────────────────────────────────────────────────
 

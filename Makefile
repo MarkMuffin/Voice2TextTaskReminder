@@ -1,4 +1,4 @@
-.PHONY: install test lint run docker-up docker-down migrate
+.PHONY: install test lint typecheck ci run docker-up docker-down migrate
 
 install:
 	pip install -e ".[dev]"
@@ -12,6 +12,11 @@ lint:
 
 format:
 	ruff format app/ tests/
+
+typecheck:
+	mypy app/
+
+ci: lint typecheck test
 
 run:
 	python -m app.main

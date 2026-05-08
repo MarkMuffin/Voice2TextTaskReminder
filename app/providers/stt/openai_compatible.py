@@ -11,7 +11,9 @@ class OpenAICompatibleSTTProvider(BaseTranscriptionProvider):
     Works with OpenAI Whisper API and any compatible service.
     """
 
-    def __init__(self, api_key: str, model: str = "whisper-1", base_url: str = "https://api.openai.com/v1") -> None:
+    def __init__(
+        self, api_key: str, model: str = "whisper-1", base_url: str = "https://api.openai.com/v1"
+    ) -> None:
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -26,7 +28,5 @@ class OpenAICompatibleSTTProvider(BaseTranscriptionProvider):
             response = await client.post(url, headers=headers, files=files, data=data)
 
         if response.status_code != 200:
-            raise TranscriptionError(
-                f"STT API error {response.status_code}: {response.text}"
-            )
+            raise TranscriptionError(f"STT API error {response.status_code}: {response.text}")
         return response.text.strip()

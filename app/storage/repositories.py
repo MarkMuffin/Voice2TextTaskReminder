@@ -21,23 +21,17 @@ class TaskRepository:
 
     async def get(self, task_id: int) -> Task | None:
         async with self._sf() as session:
-            result = await session.execute(
-                select(Task).where(Task.id == task_id)
-            )
+            result = await session.execute(select(Task).where(Task.id == task_id))
             return result.scalar_one_or_none()
 
     async def get_with_reminders(self, task_id: int) -> Task | None:
         async with self._sf() as session:
             result = await session.execute(
-                select(Task)
-                .options(selectinload(Task.reminders))
-                .where(Task.id == task_id)
+                select(Task).options(selectinload(Task.reminders)).where(Task.id == task_id)
             )
             return result.scalar_one_or_none()
 
-    async def list_by_user(
-        self, user_id: str, status: TaskStatus | None = None
-    ) -> list[Task]:
+    async def list_by_user(self, user_id: str, status: TaskStatus | None = None) -> list[Task]:
         async with self._sf() as session:
             q = select(Task).where(Task.user_id == user_id)
             if status is not None:
@@ -53,9 +47,7 @@ class TaskRepository:
             values: dict = {"status": status, "updated_at": datetime.utcnow()}
             if completed_at is not None:
                 values["completed_at"] = completed_at
-            await session.execute(
-                update(Task).where(Task.id == task_id).values(**values)
-            )
+            await session.execute(update(Task).where(Task.id == task_id).values(**values))
             await session.commit()
             return await self._get_in_session(session, task_id)
 
@@ -102,9 +94,7 @@ class ReminderRepository:
 
     async def get(self, reminder_id: int) -> Reminder | None:
         async with self._sf() as session:
-            result = await session.execute(
-                select(Reminder).where(Reminder.id == reminder_id)
-            )
+            result = await session.execute(select(Reminder).where(Reminder.id == reminder_id))
             return result.scalar_one_or_none()
 
     async def list_pending(self, before: datetime | None = None) -> list[Reminder]:

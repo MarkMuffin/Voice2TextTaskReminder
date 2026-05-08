@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -16,6 +16,7 @@ def renderer():
 @dataclass
 class FakeTask:
     """Minimal task-like object for renderer tests — no SQLAlchemy needed."""
+
     id: int = 1
     user_id: str = "u1"
     title: str = "Купить молоко"
@@ -25,8 +26,8 @@ class FakeTask:
     raw_text: str | None = None
     remind_at: datetime | None = None
     completed_at: datetime | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 def make_task(**kwargs) -> FakeTask:
@@ -42,7 +43,7 @@ def test_task_created_no_reminder(renderer):
 
 
 def test_task_created_with_reminder(renderer):
-    task = make_task(remind_at=datetime(2025, 12, 25, 9, 0, tzinfo=timezone.utc))
+    task = make_task(remind_at=datetime(2025, 12, 25, 9, 0, tzinfo=UTC))
     text, kb = renderer.task_created(task)
     assert "Напомню" in text
     assert kb is not None
@@ -63,7 +64,7 @@ def test_task_cancelled(renderer):
 
 
 def test_task_snoozed(renderer):
-    task = make_task(remind_at=datetime(2025, 12, 31, 18, 0, tzinfo=timezone.utc))
+    task = make_task(remind_at=datetime(2025, 12, 31, 18, 0, tzinfo=UTC))
     text = renderer.task_snoozed(task)
     assert "🔁" in text
 
@@ -82,7 +83,7 @@ def test_task_list_with_tasks(renderer):
 
 
 def test_reminder_message(renderer):
-    task = make_task(remind_at=datetime(2025, 6, 1, 9, 0, tzinfo=timezone.utc))
+    task = make_task(remind_at=datetime(2025, 6, 1, 9, 0, tzinfo=UTC))
     text, kb = renderer.reminder_message(task)
     assert "⏰" in text
     assert "Купить молоко" in text
