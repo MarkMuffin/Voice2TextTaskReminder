@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -47,6 +47,14 @@ def test_task_created_with_reminder(renderer):
     text, kb = renderer.task_created(task)
     assert "Напомню" in text
     assert kb is not None
+
+
+def test_task_created_with_future_reminder_shows_relative(renderer):
+    future = datetime.now(UTC) + timedelta(hours=5)
+    task = make_task(remind_at=future)
+    text, kb = renderer.task_created(task)
+    assert "Напомню" in text
+    assert "через" in text
 
 
 def test_task_completed(renderer):

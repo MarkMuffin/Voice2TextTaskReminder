@@ -3,6 +3,7 @@ import logging
 import os
 
 import uvicorn
+from aiogram.types import BotCommand
 from fastapi import FastAPI
 from sqlalchemy import select
 
@@ -38,6 +39,15 @@ async def main() -> None:
     await init_db(engine)
 
     bot = create_bot(settings.telegram_bot_token)
+    await bot.set_my_commands(
+        [
+            BotCommand(command="list", description="Активные задачи"),
+            BotCommand(command="done", description="Выполненные задачи"),
+            BotCommand(command="timezone", description="Текущий часовой пояс"),
+            BotCommand(command="set_timezone", description="Установить таймзону (напр. Moscow)"),
+            BotCommand(command="help", description="Справка"),
+        ]
+    )
     container = Container(session_factory)
     scheduler = ReminderScheduler(container, bot)
     container.scheduler = scheduler

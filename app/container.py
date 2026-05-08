@@ -13,7 +13,13 @@ from app.services.capture_service import CaptureService
 from app.services.reminder_service import ReminderService
 from app.services.renderer import Renderer
 from app.services.task_service import TaskService
-from app.storage.repositories import CaptureLogRepository, ReminderRepository, TaskRepository
+from app.services.user_settings_service import UserSettingsService
+from app.storage.repositories import (
+    CaptureLogRepository,
+    ReminderRepository,
+    TaskRepository,
+    UserSettingsRepository,
+)
 
 
 def _build_stt(cfg: Settings) -> BaseTranscriptionProvider:
@@ -74,10 +80,12 @@ class Container:
         task_repo = TaskRepository(session_factory)
         reminder_repo = ReminderRepository(session_factory)
         capture_log_repo = CaptureLogRepository(session_factory)
+        user_settings_repo = UserSettingsRepository(session_factory)
 
         self.task_service = TaskService(task_repo)
         self.reminder_service = ReminderService(reminder_repo)
         self.capture_service = CaptureService(stt, llm, capture_log_repo)
         self.action_router = ActionRouter(self.task_service, self.reminder_service)
         self.renderer = Renderer()
+        self.user_settings_service = UserSettingsService(user_settings_repo)
         self.scheduler: ReminderScheduler | None = None  # set after bot is created

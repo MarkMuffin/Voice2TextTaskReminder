@@ -5,7 +5,6 @@ from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from app.config import settings
 from app.domain.enums import InputSource
 
 if TYPE_CHECKING:
@@ -27,6 +26,8 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
             "Команды:\n"
             "/list — активные задачи\n"
             "/done — выполненные задачи\n"
+            "/timezone — текущий часовой пояс\n"
+            "/set_timezone <tz> — установить часовой пояс (например: Europe/Moscow)\n"
             "/help — справка"
         )
 
@@ -39,7 +40,9 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
             "• «Сделал задачу про молоко»\n"
             "• «Отмени напоминание про молоко»\n\n"
             "/list — список активных задач\n"
-            "/done — выполненные задачи"
+            "/done — выполненные задачи\n"
+            "/timezone — текущий часовой пояс\n"
+            "/set_timezone <tz> — установить часовой пояс (например: Europe/Moscow)"
         )
 
     @r.message(Command("list"))
@@ -60,12 +63,39 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
         text = container.renderer.task_list(tasks, "Выполненные задачи")
         await message.answer(text, parse_mode="HTML")
 
+    @r.message(Command("timezone"))
+    async def cmd_timezone(message: Message) -> None:
+        if message.from_user is None:
+            return
+        user_id = str(message.from_user.id)
+        tz = await container.user_settings_service.get_user_timezone(user_id)
+        await message.answer(f"🕐 Текущий часовой пояс: <b>{tz}</b>", parse_mode="HTML")
+
+    @r.message(Command("set_timezone"))
+    async def cmd_set_timezone(message: Message) -> None:
+        if message.from_user is None or message.text is None:
+            return
+        user_id = str(message.from_user.id)
+        parts = message.text.strip().split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            await message.answer("❌ Укажи город или таймзону. Например: /set_timezone Moscow")
+            return
+        tz_input = parts[1].strip()
+        try:
+            resolved = await container.user_settings_service.set_user_timezone(user_id, tz_input)
+            await message.answer(f"✅ Таймзона установлена: <b>{resolved}</b>", parse_mode="HTML")
+        except ValueError:
+            await message.answer(
+                "❌ Не удалось найти таймзону. Укажи город по-английски (Moscow, London, Tokyo) "
+                "или IANA-формат (Europe/Moscow)"
+            )
+
     @r.message(F.voice)
     async def handle_voice(message: Message) -> None:
         if message.from_user is None or message.voice is None:
             return
         user_id = str(message.from_user.id)
-        tz = settings.default_timezone
+        tz = await container.user_settings_service.get_user_timezone(user_id)
 
         await message.answer("🎙 Обрабатываю...")
 
@@ -99,7 +129,7 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
         if message.from_user is None or message.text is None:
             return
         user_id = str(message.from_user.id)
-        tz = settings.default_timezone
+        tz = await container.user_settings_service.get_user_timezone(user_id)
         text = message.text.strip()
 
         try:

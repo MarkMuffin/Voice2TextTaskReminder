@@ -4,7 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.adapters.telegram.callbacks import TaskCallback
 from app.domain.enums import TaskStatus
 from app.domain.models import Task
-from app.utils.time_utils import format_remind_at
+from app.utils.time_utils import format_remind_at, format_time_until
 
 
 class Renderer:
@@ -16,6 +16,9 @@ class Renderer:
         remind_str = ""
         if task.remind_at:
             remind_str = f"\nНапомню: {format_remind_at(task.remind_at, task.timezone)}"
+            until = format_time_until(task.remind_at)
+            if until:
+                remind_str += f" ({until})"
         text = f"✅ Добавил: <b>{task.title}</b>{remind_str}"
         kb = self._task_action_keyboard(task.id)
         return text, kb
@@ -36,6 +39,9 @@ class Renderer:
         remind_str = ""
         if task.remind_at:
             remind_str = format_remind_at(task.remind_at, task.timezone)
+            until = format_time_until(task.remind_at)
+            if until:
+                remind_str += f" ({until})"
         return f"🔁 Напомню {remind_str}: <b>{task.title}</b>"
 
     # ─── Task list ────────────────────────────────────────────────────────────
@@ -48,6 +54,9 @@ class Renderer:
             remind = ""
             if task.remind_at:
                 remind = f" — {format_remind_at(task.remind_at, task.timezone)}"
+                until = format_time_until(task.remind_at)
+                if until:
+                    remind += f" ({until})"
             status_icon = "✅" if task.status == TaskStatus.DONE else "🔘"
             lines.append(f"{i}. {status_icon} {task.title}{remind}")
         return "\n".join(lines)
