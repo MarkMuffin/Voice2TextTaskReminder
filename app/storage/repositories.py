@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from app.domain.enums import ReminderStatus, TaskStatus
-from app.domain.models import CaptureLog, Reminder, Task
+from app.domain.models import CaptureLog, Reminder, Task, UserSettings
 
 
 class TaskRepository:
@@ -146,6 +146,34 @@ class ReminderRepository:
                 .values(status=ReminderStatus.CANCELLED)
             )
             await session.commit()
+
+
+class UserSettingsRepository:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._sf = session_factory
+
+    async def get(self, user_id: str) -> UserSettings | None:
+        async with self._sf() as session:
+            result = await session.execute(
+                select(UserSettings).where(UserSettings.user_id == user_id)
+            )
+            return result.scalar_one_or_none()
+
+    async def upsert(self, user_id: str, timezone: str) -> UserSettings:
+        async with self._sf() as session:
+            existing = await session.get(UserSettings, user_id)
+            if existing:
+                existing.timezone = timezone
+                existing.updated_at = datetime.utcnow()
+                await session.commit()
+                await session.refresh(existing)
+                return existing
+            else:
+                obj = UserSettings(user_id=user_id, timezone=timezone)
+                session.add(obj)
+                await session.commit()
+                await session.refresh(obj)
+                return obj
 
 
 class CaptureLogRepository:

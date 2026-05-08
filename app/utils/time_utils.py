@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytz
 
@@ -84,7 +84,8 @@ def format_remind_at(dt: datetime, tz_name: str | None = None) -> str:
     """Format datetime for human-readable Russian output."""
     tz = pytz.timezone(tz_name or settings.default_timezone)
     if dt.tzinfo is None:
-        dt = tz.localize(dt)
+        # naive dt is treated as UTC, then convert to local
+        dt = pytz.utc.localize(dt).astimezone(tz)
     else:
         dt = dt.astimezone(tz)
 
@@ -98,3 +99,34 @@ def format_remind_at(dt: datetime, tz_name: str | None = None) -> str:
         return f"завтра в {dt.strftime('%H:%M')}"
     else:
         return dt.strftime("%-d %B в %H:%M")
+
+
+def format_time_until(target_dt: datetime, now_dt: datetime | None = None) -> str | None:
+    """Return human-readable relative time until target_dt (Russian).
+
+    Returns None if target is in the past.
+    Accepts naive UTC or tz-aware datetimes.
+    """
+    now = now_dt or datetime.now(UTC)
+    if now.tzinfo is None:
+        now = pytz.utc.localize(now)
+    if target_dt.tzinfo is None:
+        target_dt = pytz.utc.localize(target_dt)
+
+    delta = target_dt - now
+    total_minutes = int(delta.total_seconds() // 60)
+    if total_minutes <= 0:
+        return None
+
+    total_hours = total_minutes // 60
+    remaining_minutes = total_minutes % 60
+
+    if total_minutes < 60:
+        return f"через {total_minutes} минут"
+    elif total_hours < 24:
+        if remaining_minutes == 0:
+            return f"через {total_hours} часов"
+        return f"через {total_hours} ч {remaining_minutes} мин"
+    else:
+        days = total_hours // 24
+        return f"через {days} дней"

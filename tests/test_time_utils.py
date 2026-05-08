@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 import pytz
 
@@ -6,6 +6,7 @@ from app.utils.time_utils import (
     apply_time_keyword,
     ensure_time_set,
     format_remind_at,
+    format_time_until,
     in_minutes,
     now_in_tz,
     parse_remind_at,
@@ -119,3 +120,56 @@ def test_format_remind_at_today():
 def test_now_in_tz():
     dt = now_in_tz("Europe/Amsterdam")
     assert dt.tzinfo is not None
+
+
+# ─── format_time_until ────────────────────────────────────────────────────────
+
+
+def test_format_time_until_in_past():
+    now = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
+    target = datetime(2025, 6, 1, 11, 0, 0, tzinfo=UTC)
+    assert format_time_until(target, now_dt=now) is None
+
+
+def test_format_time_until_30_minutes():
+    now = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
+    target = now + timedelta(minutes=30)
+    result = format_time_until(target, now_dt=now)
+    assert result == "через 30 минут"
+
+
+def test_format_time_until_2h_15min():
+    now = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
+    target = now + timedelta(hours=2, minutes=15)
+    result = format_time_until(target, now_dt=now)
+    assert result == "через 2 ч 15 мин"
+
+
+def test_format_time_until_exact_hours():
+    now = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
+    target = now + timedelta(hours=3)
+    result = format_time_until(target, now_dt=now)
+    assert result == "через 3 часов"
+
+
+def test_format_time_until_3_days():
+    now = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
+    target = now + timedelta(days=3)
+    result = format_time_until(target, now_dt=now)
+    assert result == "через 3 дней"
+
+
+def test_format_time_until_naive_utc_target():
+    """Naive datetime is treated as UTC."""
+    now = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
+    target = datetime(2025, 6, 1, 14, 0, 0)  # naive — 2 hours ahead in UTC
+    result = format_time_until(target, now_dt=now)
+    assert result == "через 2 часов"
+
+
+def test_format_remind_at_naive_utc_bug():
+    """format_remind_at with naive UTC should show local time, not treat as local."""
+    # UTC midnight = 02:00 Amsterdam (CEST, UTC+2)
+    dt_utc_naive = datetime(2025, 6, 1, 0, 0, 0)  # naive UTC
+    text = format_remind_at(dt_utc_naive, "Europe/Amsterdam")
+    assert "02:00" in text
