@@ -1,0 +1,41 @@
+services:
+  app:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data      # SQLite DB — persists across redeploys
+      - ./logs:/app/logs      # optional log mount
+    restart: unless-stopped
+
+    # ── Resource limits ──────────────────────────────────────────────────────
+    mem_limit: 256m
+    memswap_limit: 256m       # no extra swap beyond RAM
+    pids_limit: 128
+
+    # ── Hardening ────────────────────────────────────────────────────────────
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=50m,mode=1777
+
+    # ── Ports ────────────────────────────────────────────────────────────────
+    # Bot uses long polling → no external port needed.
+    # Uncomment to expose HTTP API on localhost only (e.g. for monitoring):
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+
+    # ── Health ───────────────────────────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/capture/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+    # ── Logging ──────────────────────────────────────────────────────────────
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
