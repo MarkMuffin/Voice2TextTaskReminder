@@ -51,8 +51,8 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
             return
         user_id = str(message.from_user.id)
         tasks = await container.task_service.list_active(user_id)
-        text = container.renderer.task_list(tasks, "Активные задачи")
-        await message.answer(text, parse_mode="HTML")
+        text, kb = container.renderer.render_inline_task_list(tasks)
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
     @r.message(Command("done"))
     async def cmd_done(message: Message) -> None:

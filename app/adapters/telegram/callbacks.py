@@ -1,9 +1,12 @@
 import logging
 from typing import TYPE_CHECKING
 
-from aiogram import Router
+from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import CallbackQuery, Message
+
+from app.domain.enums import CompleteTaskResult
 
 if TYPE_CHECKING:
     from app.container import Container
@@ -17,6 +20,12 @@ class TaskCallback(CallbackData, prefix="task"):
     action: str  # complete | snooze | cancel
     task_id: int
     minutes: int = 0  # used for snooze
+
+
+class TaskListCallback(CallbackData, prefix="tl"):
+    action: str  # done | refresh
+    task_id: int = 0
+    task_num: int = 0  # display number (for button label only, not DB key)
 
 
 def setup_callbacks(r: Router, container: "Container") -> None:
@@ -78,4 +87,45 @@ def setup_callbacks(r: Router, container: "Container") -> None:
             logger.exception("Callback error: %s", exc)
             await query.answer("Ошибка. Попробуй ещё раз.")
 
+        await query.answer()
+
+    @r.callback_query(TaskListCallback.filter(F.action == "done"))
+    async def handle_list_done(query: CallbackQuery, callback_data: TaskListCallback) -> None:
+        if not isinstance(query.message, Message):
+            return
+        user_id = str(query.from_user.id)
+        task_id = callback_data.task_id
+
+        result, task = await container.task_service.complete_task_safe(user_id, task_id)
+
+        if result == CompleteTaskResult.FORBIDDEN:
+            await query.answer("⛔ Эта задача не принадлежит тебе")
+            return
+        elif result == CompleteTaskResult.NOT_FOUND:
+            await query.answer("❌ Задача не найдена")
+        elif result == CompleteTaskResult.ALREADY_INACTIVE:
+            await query.answer("ℹ️ Задача уже закрыта")
+        else:  # COMPLETED
+            await container.reminder_service.cancel_task_reminders(task_id)
+            await query.answer("✅ Готово")
+
+        completed = [task] if result == CompleteTaskResult.COMPLETED and task else []
+        tasks = await container.task_service.list_active(user_id)
+        text, kb = container.renderer.render_inline_task_list(tasks, completed=completed)
+        try:
+            await query.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except TelegramBadRequest:
+            pass
+
+    @r.callback_query(TaskListCallback.filter(F.action == "refresh"))
+    async def handle_list_refresh(query: CallbackQuery) -> None:
+        if not isinstance(query.message, Message):
+            return
+        user_id = str(query.from_user.id)
+        tasks = await container.task_service.list_active(user_id)
+        text, kb = container.renderer.render_inline_task_list(tasks)
+        try:
+            await query.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except TelegramBadRequest:
+            pass
         await query.answer()

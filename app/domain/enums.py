@@ -30,3 +30,10 @@ class IntentType(StrEnum):
     SNOOZE_TASK = "snooze_task"
     CANCEL_TASK = "cancel_task"
     UNKNOWN = "unknown"
+
+
+class CompleteTaskResult(StrEnum):
+    COMPLETED = "completed"
+    ALREADY_INACTIVE = "already_inactive"
+    NOT_FOUND = "not_found"
+    FORBIDDEN = "forbidden"

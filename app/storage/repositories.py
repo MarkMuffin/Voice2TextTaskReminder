@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -60,6 +60,14 @@ class TaskRepository:
             )
             await session.commit()
             return await self._get_in_session(session, task_id)
+
+    async def count_by_user(self, user_id: str, status: TaskStatus | None = None) -> int:
+        async with self._sf() as session:
+            q = select(func.count()).select_from(Task).where(Task.user_id == user_id)
+            if status is not None:
+                q = q.where(Task.status == status)
+            result = await session.execute(q)
+            return int(result.scalar() or 0)
 
     async def find_by_title_fuzzy(self, user_id: str, title_fragment: str) -> Task | None:
         """Find active task by partial title match."""

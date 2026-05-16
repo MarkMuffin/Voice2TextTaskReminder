@@ -3,6 +3,7 @@ name: Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   # ── Step 1: full CI (lint + typecheck + tests) ──────────────────────────────
@@ -33,7 +34,9 @@ jobs:
   # ── Step 2: deploy to VPS (only if tests passed) ────────────────────────────
   deploy:
     needs: test
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
