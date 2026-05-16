@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.domain.enums import TaskStatus
+from app.domain.enums import CompleteTaskResult, TaskStatus
 from app.domain.models import Task
 from app.domain.schemas import TaskCreate
 from app.storage.repositories import TaskRepository
@@ -45,6 +45,24 @@ class TaskService:
 
     async def snooze_task(self, task_id: int, snooze_until: datetime) -> Task | None:
         return await self._repo.update_remind_at(task_id, to_utc_naive(snooze_until))
+
+    async def count_active_tasks(self, user_id: str) -> int:
+        return await self._repo.count_by_user(user_id, status=TaskStatus.ACTIVE)
+
+    async def complete_task_safe(
+        self, user_id: str, task_id: int
+    ) -> tuple[CompleteTaskResult, Task | None]:
+        task = await self._repo.get(task_id)
+        if task is None:
+            return CompleteTaskResult.NOT_FOUND, None
+        if task.user_id != user_id:
+            return CompleteTaskResult.FORBIDDEN, None
+        if task.status != TaskStatus.ACTIVE:
+            return CompleteTaskResult.ALREADY_INACTIVE, task
+        updated = await self._repo.update_status(
+            task_id, TaskStatus.DONE, completed_at=datetime.utcnow()
+        )
+        return CompleteTaskResult.COMPLETED, updated
 
     async def find_by_reference(self, user_id: str, reference: str) -> Task | None:
         """Find active task by fuzzy title match."""
