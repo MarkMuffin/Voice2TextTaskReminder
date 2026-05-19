@@ -26,6 +26,7 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
             "Команды:\n"
             "/list — активные задачи\n"
             "/done — выполненные задачи\n"
+            "/scheduled — повторяющиеся задачи\n"
             "/timezone — текущий часовой пояс\n"
             "/set_timezone <tz> — установить часовой пояс (например: Europe/Moscow)\n"
             "/help — справка"
@@ -38,12 +39,29 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
             "• «Напомни купить молоко завтра утром»\n"
             "• «Позвонить маме в пятницу вечером»\n"
             "• «Сделал задачу про молоко»\n"
-            "• «Отмени напоминание про молоко»\n\n"
+            "• «Отмени напоминание про молоко»\n"
+            "• «Каждую пятницу в 17 пополнить фонд»\n\n"
             "/list — список активных задач\n"
             "/done — выполненные задачи\n"
+            "/scheduled — повторяющиеся задачи\n"
             "/timezone — текущий часовой пояс\n"
             "/set_timezone <tz> — установить часовой пояс (например: Europe/Moscow)"
         )
+
+    @r.message(Command("scheduled"))
+    async def cmd_scheduled(message: Message) -> None:
+        from datetime import UTC, datetime
+
+        if message.from_user is None:
+            return
+        user_id = str(message.from_user.id)
+        if container.recurring_service is None:
+            await message.answer("🔁 Повторяющиеся задачи отключены.")
+            return
+        rules = await container.recurring_service.list_all_visible(user_id)
+        now_utc = datetime.now(UTC)
+        text, kb = container.renderer.render_recurring_task_list(rules, now_utc)
+        await message.answer(text, reply_markup=kb, parse_mode="HTML")
 
     @r.message(Command("list"))
     async def cmd_list(message: Message) -> None:
@@ -150,6 +168,8 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
 
 
 async def _send_result(message: Message, result, container, user_id: str) -> None:
+    from datetime import UTC, datetime
+
     from app.domain.enums import IntentType
     from app.services.action_router import ActionResult
 
@@ -193,5 +213,29 @@ async def _send_result(message: Message, result, container, user_id: str) -> Non
         case IntentType.CANCEL_TASK:
             if r.task:
                 await message.answer(container.renderer.task_cancelled(r.task), parse_mode="HTML")
+
+        case IntentType.CREATE_RECURRING_TASK:
+            if r.recurring_task:
+                now_utc = datetime.now(UTC)
+                text = container.renderer.render_recurring_task_created(r.recurring_task, now_utc)
+                await message.answer(text, parse_mode="HTML")
+
+        case IntentType.LIST_RECURRING_TASKS:
+            rules = r.recurring_tasks or []
+            now_utc = datetime.now(UTC)
+            text, kb = container.renderer.render_recurring_task_list(rules, now_utc)
+            await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+        case (
+            IntentType.CANCEL_RECURRING_TASK
+            | IntentType.PAUSE_RECURRING_TASK
+            | IntentType.RESUME_RECURRING_TASK
+        ):
+            if r.recurring_task:
+                now_utc = datetime.now(UTC)
+                rules = await container.recurring_service.list_all_visible(user_id)
+                text, kb = container.renderer.render_recurring_task_list(rules, now_utc)
+                await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
         case _:
             await message.answer(container.renderer.error("Неизвестная команда."))

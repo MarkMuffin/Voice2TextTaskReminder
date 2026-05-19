@@ -30,6 +30,11 @@ class IntentType(StrEnum):
     SNOOZE_TASK = "snooze_task"
     CANCEL_TASK = "cancel_task"
     UNKNOWN = "unknown"
+    CREATE_RECURRING_TASK = "create_recurring_task"
+    LIST_RECURRING_TASKS = "list_recurring_tasks"
+    CANCEL_RECURRING_TASK = "cancel_recurring_task"
+    PAUSE_RECURRING_TASK = "pause_recurring_task"
+    RESUME_RECURRING_TASK = "resume_recurring_task"
 
 
 class CompleteTaskResult(StrEnum):
@@ -37,3 +42,15 @@ class CompleteTaskResult(StrEnum):
     ALREADY_INACTIVE = "already_inactive"
     NOT_FOUND = "not_found"
     FORBIDDEN = "forbidden"
+
+
+class RecurringTaskStatus(StrEnum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    CANCELLED = "cancelled"
+
+
+class RecurrenceType(StrEnum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"

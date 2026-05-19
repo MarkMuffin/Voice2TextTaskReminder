@@ -4,8 +4,8 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from app.domain.enums import ReminderStatus, TaskStatus
-from app.domain.models import CaptureLog, Reminder, Task, UserSettings
+from app.domain.enums import RecurringTaskStatus, ReminderStatus, TaskStatus
+from app.domain.models import CaptureLog, RecurringTask, Reminder, Task, UserSettings
 
 
 class TaskRepository:
@@ -78,6 +78,25 @@ class TaskRepository:
                     Task.user_id == user_id,
                     Task.status == TaskStatus.ACTIVE,
                     Task.title.ilike(f"%{title_fragment}%"),
+                )
+                .limit(1)
+            )
+            return result.scalar_one_or_none()
+
+    async def find_by_recurring_and_scheduled(
+        self, recurring_task_id: int, scheduled_for: datetime
+    ) -> Task | None:
+        """Idempotency check: find existing task for recurring rule + scheduled time."""
+        async with self._sf() as session:
+            # SQLite stores datetimes as naive UTC; strip tzinfo for comparison
+            scheduled_cmp = (
+                scheduled_for.replace(tzinfo=None) if scheduled_for.tzinfo else scheduled_for
+            )
+            result = await session.execute(
+                select(Task)
+                .where(
+                    Task.recurring_task_id == recurring_task_id,
+                    Task.scheduled_for == scheduled_cmp,
                 )
                 .limit(1)
             )
@@ -204,3 +223,76 @@ class CaptureLogRepository:
                 .limit(limit)
             )
             return list(result.scalars().all())
+
+
+class RecurringTaskRepository:
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self._sf = session_factory
+
+    async def create(self, rt: RecurringTask) -> RecurringTask:
+        async with self._sf() as session:
+            session.add(rt)
+            await session.commit()
+            await session.refresh(rt)
+            return rt
+
+    async def get(self, rule_id: int) -> RecurringTask | None:
+        async with self._sf() as session:
+            result = await session.execute(select(RecurringTask).where(RecurringTask.id == rule_id))
+            return result.scalar_one_or_none()
+
+    async def list_by_user(self, user_id: str, status: str | None = None) -> list[RecurringTask]:
+        async with self._sf() as session:
+            q = select(RecurringTask).where(RecurringTask.user_id == user_id)
+            if status is not None:
+                q = q.where(RecurringTask.status == status)
+            q = q.order_by(RecurringTask.created_at.desc())
+            result = await session.execute(q)
+            return list(result.scalars().all())
+
+    async def list_due(self, before_utc: datetime) -> list[RecurringTask]:
+        """Return ACTIVE rules whose next_run_at <= before_utc."""
+        async with self._sf() as session:
+            before_cmp = before_utc.replace(tzinfo=None) if before_utc.tzinfo else before_utc
+            q = (
+                select(RecurringTask)
+                .where(
+                    RecurringTask.status == RecurringTaskStatus.ACTIVE,
+                    RecurringTask.next_run_at <= before_cmp,
+                )
+                .order_by(RecurringTask.next_run_at.asc())
+            )
+            result = await session.execute(q)
+            return list(result.scalars().all())
+
+    async def update_status(
+        self,
+        rule_id: int,
+        status: str,
+        cancelled_at: datetime | None = None,
+    ) -> None:
+        async with self._sf() as session:
+            values: dict = {"status": status, "updated_at": datetime.utcnow()}
+            if cancelled_at is not None:
+                values["cancelled_at"] = cancelled_at
+            await session.execute(
+                update(RecurringTask).where(RecurringTask.id == rule_id).values(**values)
+            )
+            await session.commit()
+
+    async def update_after_run(
+        self, rule_id: int, last_run_at: datetime, next_run_at: datetime
+    ) -> None:
+        async with self._sf() as session:
+            last_cmp = last_run_at.replace(tzinfo=None) if last_run_at.tzinfo else last_run_at
+            next_cmp = next_run_at.replace(tzinfo=None) if next_run_at.tzinfo else next_run_at
+            await session.execute(
+                update(RecurringTask)
+                .where(RecurringTask.id == rule_id)
+                .values(
+                    last_run_at=last_cmp,
+                    next_run_at=next_cmp,
+                    updated_at=datetime.utcnow(),
+                )
+            )
+            await session.commit()

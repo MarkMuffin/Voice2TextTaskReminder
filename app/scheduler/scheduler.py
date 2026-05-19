@@ -57,7 +57,12 @@ class ReminderScheduler:
             replace_existing=True,
             misfire_grace_time=300,
         )
-        logger.info("Scheduled reminder %s for task %s at %s UTC", reminder_id, task_id, run_date)
+        logger.info(
+            "Scheduled reminder %s for task %s at %s UTC",
+            reminder_id,
+            task_id,
+            run_date,
+        )
 
     def reschedule_reminder(self, task_id: int, remind_at: datetime, user_id: str) -> None:
         job_id = f"reminder_{task_id}"
@@ -122,3 +127,33 @@ class ReminderScheduler:
             if r.task_id == task_id:
                 await self._fire_reminder(r.id, task_id, user_id)
                 return
+
+    def start_recurring_generator(self, interval_seconds: int) -> None:
+        from apscheduler.triggers.interval import IntervalTrigger
+
+        self._scheduler.add_job(
+            self._generate_recurring_tasks,
+            IntervalTrigger(seconds=interval_seconds),
+            id="recurring_generator",
+            replace_existing=True,
+            misfire_grace_time=60,
+        )
+        logger.info("Recurring task generator started (interval=%ds)", interval_seconds)
+
+    async def _generate_recurring_tasks(self) -> None:
+        now = datetime.now(UTC)
+        if self._container.recurring_service is None:
+            return
+        try:
+            created = await self._container.recurring_service.generate_due_instances(now)
+            for task in created:
+                if task.remind_at and task.id:
+                    reminder = await self._container.reminder_service.schedule_reminder(
+                        task.id, task.remind_at
+                    )
+                    if reminder:
+                        self.schedule_reminder(
+                            reminder.id, task.id, _as_utc(task.remind_at), task.user_id
+                        )
+        except Exception as exc:
+            logger.error("Recurring generation failed: %s", exc)

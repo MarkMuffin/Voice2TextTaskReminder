@@ -7,7 +7,9 @@ from app.domain.enums import IntentType
 from app.domain.schemas import ParsedIntent
 from app.providers.llm.mock import MockIntentParser
 from app.providers.stt.mock import MockTranscriptionProvider
+from app.services.recurring_service import RecurringTaskService
 from app.storage.db import drop_db, init_db
+from app.storage.repositories import RecurringTaskRepository, TaskRepository
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -34,6 +36,13 @@ async def container(session_factory):
     # Stub scheduler
     c.scheduler = _StubScheduler()
     return c
+
+
+@pytest_asyncio.fixture
+async def recurring_service(session_factory):
+    repo = RecurringTaskRepository(session_factory)
+    task_repo = TaskRepository(session_factory)
+    return RecurringTaskService(repo, task_repo)
 
 
 class _StubScheduler:
