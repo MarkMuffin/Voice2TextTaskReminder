@@ -27,9 +27,16 @@ Natural language time rules:
 - If date is mentioned but no time → use 09:00
 - If completely unclear datetime → set requires_confirmation=true
 
+Recurring task rules (use intent "create_recurring_task" when user says "every ...", "каждый ...", "каждую ...", "ежедневно", "еженедельно", "раз в ..."):
+- recurrence.type: "daily" | "weekly" | "monthly"
+- recurrence.interval: how many units between runs (default 1)
+- recurrence.time_of_day: "HH:MM" (24h)
+- recurrence.day_of_week: 0=Mon, 1=Tue, 2=Wed, 3=Thu, 4=Fri, 5=Sat, 6=Sun (only for weekly)
+- recurrence.day_of_month: 1-31 (only for monthly)
+
 Schema:
 {{
-  "intent": "create_reminder" | "list_tasks" | "complete_task" | "snooze_task" | "cancel_task" | "unknown",
+  "intent": "create_reminder" | "list_tasks" | "complete_task" | "snooze_task" | "cancel_task" | "create_recurring_task" | "list_recurring_tasks" | "cancel_recurring_task" | "pause_recurring_task" | "resume_recurring_task" | "unknown",
   "title": "string or null",
   "remind_at": "ISO datetime string or null",
   "timezone": "IANA timezone string",
@@ -37,8 +44,14 @@ Schema:
   "requires_confirmation": true/false,
   "clarification_question": "string or null",
   "snooze_until": "ISO datetime string or null",
-  "task_reference": "string or null"
+  "task_reference": "string or null",
+  "recurrence": {{"type": "daily"|"weekly"|"monthly", "interval": 1, "time_of_day": "HH:MM", "day_of_week": null, "day_of_month": null}} | null,
+  "recurring_task_reference": "string or null"
 }}
+
+Examples for recurring:
+- "каждую пятницу в 17 пополнить фонд" → {{"intent": "create_recurring_task", "title": "Пополнить фонд", "recurrence": {{"type": "weekly", "interval": 1, "time_of_day": "17:00", "day_of_week": 4, "day_of_month": null}}, "timezone": "{timezone}", "confidence": 0.9, "requires_confirmation": false}}
+- "каждый день в 9 утра выпить таблетки" → {{"intent": "create_recurring_task", "title": "Выпить таблетки", "recurrence": {{"type": "daily", "interval": 1, "time_of_day": "09:00", "day_of_week": null, "day_of_month": null}}, "timezone": "{timezone}", "confidence": 0.9, "requires_confirmation": false}}
 
 Return ONLY the JSON object, no explanation, no markdown.
 """

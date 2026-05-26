@@ -4,7 +4,16 @@ from app.config import settings
 from app.storage.repositories import UserSettingsRepository
 
 # Preferred region order when multiple timezones match the same city name
-_REGION_ORDER = ["Europe", "America", "Asia", "Pacific", "Atlantic", "Indian", "Africa", "Arctic"]
+_REGION_ORDER = [
+    "Europe",
+    "America",
+    "Asia",
+    "Pacific",
+    "Atlantic",
+    "Indian",
+    "Africa",
+    "Arctic",
+]
 
 
 def find_timezone_by_city(city: str) -> str | None:

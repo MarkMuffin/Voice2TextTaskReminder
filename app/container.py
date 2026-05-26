@@ -10,12 +10,14 @@ from app.providers.llm.base import BaseIntentParser
 from app.providers.stt.base import BaseTranscriptionProvider
 from app.services.action_router import ActionRouter
 from app.services.capture_service import CaptureService
+from app.services.recurring_service import RecurringTaskService
 from app.services.reminder_service import ReminderService
 from app.services.renderer import Renderer
 from app.services.task_service import TaskService
 from app.services.user_settings_service import UserSettingsService
 from app.storage.repositories import (
     CaptureLogRepository,
+    RecurringTaskRepository,
     ReminderRepository,
     TaskRepository,
     UserSettingsRepository,
@@ -81,11 +83,17 @@ class Container:
         reminder_repo = ReminderRepository(session_factory)
         capture_log_repo = CaptureLogRepository(session_factory)
         user_settings_repo = UserSettingsRepository(session_factory)
+        recurring_repo = RecurringTaskRepository(session_factory)
 
         self.task_service = TaskService(task_repo)
         self.reminder_service = ReminderService(reminder_repo)
         self.capture_service = CaptureService(stt, llm, capture_log_repo)
-        self.action_router = ActionRouter(self.task_service, self.reminder_service)
+        self.recurring_service: RecurringTaskService | None = (
+            RecurringTaskService(recurring_repo, task_repo) if cfg.enable_recurring_tasks else None
+        )
+        self.action_router = ActionRouter(
+            self.task_service, self.reminder_service, self.recurring_service
+        )
         self.renderer = Renderer()
         self.user_settings_service = UserSettingsService(user_settings_repo)
         self.scheduler: ReminderScheduler | None = None  # set after bot is created

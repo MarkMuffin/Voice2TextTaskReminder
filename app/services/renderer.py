@@ -1,9 +1,17 @@
+from datetime import datetime
+
+import pytz
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.adapters.telegram.callbacks import TaskCallback, TaskListCallback
-from app.domain.enums import TaskStatus
-from app.domain.models import Task
+from app.adapters.telegram.callbacks import (
+    RecurringCallback,
+    TaskCallback,
+    TaskListCallback,
+)
+from app.domain.enums import RecurringTaskStatus, TaskStatus
+from app.domain.models import RecurringTask, Task
+from app.utils.recurrence import format_recurrence_human_readable
 from app.utils.time_utils import format_remind_at, format_time_until
 
 TASK_LIST_MAX = 20
@@ -161,6 +169,79 @@ class Renderer:
         )
         return text, builder.as_markup()
 
+    # ─── Recurring task list ──────────────────────────────────────────────────
+
+    def render_recurring_task_list(
+        self, rules: list[RecurringTask], now_utc: datetime
+    ) -> tuple[str, InlineKeyboardMarkup]:
+        builder = InlineKeyboardBuilder()
+
+        if not rules:
+            builder.row(
+                InlineKeyboardButton(
+                    text="🔄 Обновить",
+                    callback_data=RecurringCallback(action="refresh", rule_id=0).pack(),
+                )
+            )
+            return "🔁 Нет активных повторяющихся задач", builder.as_markup()
+
+        lines = ["🔁 <b>Повторяющиеся задачи</b>\n"]
+        for i, rule in enumerate(rules, 1):
+            human = format_recurrence_human_readable(
+                rule.recurrence_type,
+                rule.interval,
+                rule.time_of_day,
+                rule.day_of_week,
+                rule.day_of_month,
+            )
+            next_run = _format_next_run(rule.next_run_at, rule.timezone)
+            status_icon = "▶️" if rule.status == RecurringTaskStatus.ACTIVE else "⏸"
+            lines.append(f"{i}. {status_icon} <b>{rule.title}</b>\n   {human}\n   🕐 {next_run}")
+
+            if rule.status == RecurringTaskStatus.ACTIVE:
+                builder.row(
+                    InlineKeyboardButton(
+                        text=f"⏸ {i}",
+                        callback_data=RecurringCallback(action="pause", rule_id=rule.id).pack(),
+                    ),
+                    InlineKeyboardButton(
+                        text=f"❌ {i}",
+                        callback_data=RecurringCallback(action="cancel", rule_id=rule.id).pack(),
+                    ),
+                )
+            else:
+                builder.row(
+                    InlineKeyboardButton(
+                        text=f"▶️ {i}",
+                        callback_data=RecurringCallback(action="resume", rule_id=rule.id).pack(),
+                    ),
+                    InlineKeyboardButton(
+                        text=f"❌ {i}",
+                        callback_data=RecurringCallback(action="cancel", rule_id=rule.id).pack(),
+                    ),
+                )
+
+        builder.row(
+            InlineKeyboardButton(
+                text="🔄 Обновить",
+                callback_data=RecurringCallback(action="refresh", rule_id=0).pack(),
+            )
+        )
+        return "\n".join(lines), builder.as_markup()
+
+    def render_recurring_task_created(self, rule: RecurringTask, now_utc: datetime) -> str:
+        human = format_recurrence_human_readable(
+            rule.recurrence_type,
+            rule.interval,
+            rule.time_of_day,
+            rule.day_of_week,
+            rule.day_of_month,
+        )
+        next_run = _format_next_run(rule.next_run_at, rule.timezone)
+        return (
+            f"🔁 Запланировал: <b>{rule.title}</b>\nРасписание: {human}\nСледующий раз: {next_run}"
+        )
+
     # ─── Helpers ──────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -181,3 +262,13 @@ class Renderer:
             ),
         )
         return builder.as_markup()
+
+
+def _format_next_run(next_run_at: datetime, timezone: str) -> str:
+    """Format next_run_at for human display in user's local timezone."""
+    tz = pytz.timezone(timezone)
+    dt = next_run_at
+    if dt.tzinfo is None:
+        dt = pytz.utc.localize(dt)
+    dt_local = dt.astimezone(tz)
+    return dt_local.strftime("%-d %B %Y в %H:%M")

@@ -28,6 +28,11 @@ class TaskListCallback(CallbackData, prefix="tl"):
     task_num: int = 0  # display number (for button label only, not DB key)
 
 
+class RecurringCallback(CallbackData, prefix="rt"):
+    action: str  # cancel | pause | resume | refresh
+    rule_id: int = 0
+
+
 def setup_callbacks(r: Router, container: "Container") -> None:
     """Register callback handlers on an existing router with DI."""
 
@@ -129,3 +134,99 @@ def setup_callbacks(r: Router, container: "Container") -> None:
         except TelegramBadRequest:
             pass
         await query.answer()
+
+    async def _refresh_recurring_list(query: CallbackQuery, user_id: str) -> None:
+        from datetime import UTC, datetime
+
+        if container.recurring_service is None:
+            await query.answer("Повторяющиеся задачи отключены.")
+            return
+        if not isinstance(query.message, Message):
+            return
+        rules = await container.recurring_service.list_all_visible(user_id)
+        now_utc = datetime.now(UTC)
+        text, kb = container.renderer.render_recurring_task_list(rules, now_utc)
+        try:
+            await query.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except TelegramBadRequest:
+            pass
+
+    @r.callback_query(RecurringCallback.filter(F.action == "refresh"))
+    async def handle_recurring_refresh(query: CallbackQuery) -> None:
+        if not isinstance(query.message, Message):
+            return
+        user_id = str(query.from_user.id)
+        await _refresh_recurring_list(query, user_id)
+        await query.answer()
+
+    @r.callback_query(RecurringCallback.filter(F.action == "cancel"))
+    async def handle_recurring_cancel(
+        query: CallbackQuery, callback_data: RecurringCallback
+    ) -> None:
+        if not isinstance(query.message, Message):
+            return
+        user_id = str(query.from_user.id)
+        if container.recurring_service is None:
+            await query.answer("Повторяющиеся задачи отключены.")
+            return
+        from app.domain.enums import CompleteTaskResult
+
+        result, _ = await container.recurring_service.cancel_recurring(
+            user_id, callback_data.rule_id
+        )
+        if result == CompleteTaskResult.FORBIDDEN:
+            await query.answer("⛔ Это расписание не принадлежит тебе")
+            return
+        elif result == CompleteTaskResult.NOT_FOUND:
+            await query.answer("❌ Расписание не найдено")
+            return
+        await query.answer("❌ Расписание отменено")
+        await _refresh_recurring_list(query, user_id)
+
+    @r.callback_query(RecurringCallback.filter(F.action == "pause"))
+    async def handle_recurring_pause(
+        query: CallbackQuery, callback_data: RecurringCallback
+    ) -> None:
+        if not isinstance(query.message, Message):
+            return
+        user_id = str(query.from_user.id)
+        if container.recurring_service is None:
+            await query.answer("Повторяющиеся задачи отключены.")
+            return
+        from app.domain.enums import CompleteTaskResult
+
+        result, _ = await container.recurring_service.pause_recurring(
+            user_id, callback_data.rule_id
+        )
+        if result == CompleteTaskResult.FORBIDDEN:
+            await query.answer("⛔ Это расписание не принадлежит тебе")
+            return
+        elif result == CompleteTaskResult.NOT_FOUND:
+            await query.answer("❌ Расписание не найдено")
+            return
+        await query.answer("⏸ Расписание приостановлено")
+        await _refresh_recurring_list(query, user_id)
+
+    @r.callback_query(RecurringCallback.filter(F.action == "resume"))
+    async def handle_recurring_resume(
+        query: CallbackQuery, callback_data: RecurringCallback
+    ) -> None:
+        if not isinstance(query.message, Message):
+            return
+        user_id = str(query.from_user.id)
+        if container.recurring_service is None:
+            await query.answer("Повторяющиеся задачи отключены.")
+            return
+        from app.domain.enums import CompleteTaskResult
+
+        result, _ = await container.recurring_service.resume_recurring(
+            user_id, callback_data.rule_id
+        )
+        if result == CompleteTaskResult.FORBIDDEN:
+            await query.answer("⛔ Это расписание не принадлежит тебе")
+            return
+        elif result == CompleteTaskResult.NOT_FOUND:
+            await query.answer("❌ Расписание не найдено")
+            return
+        await query.answer("▶️ Расписание возобновлено")
+        await _refresh_recurring_list(query, user_id)

@@ -30,5 +30,9 @@ class Settings(BaseSettings):
     default_timezone: str = "Europe/Amsterdam"
     log_level: str = "INFO"
 
+    # Recurring tasks
+    enable_recurring_tasks: bool = True
+    recurring_task_generator_interval_seconds: int = 60
+
 
 settings = Settings()

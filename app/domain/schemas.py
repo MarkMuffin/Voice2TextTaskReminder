@@ -1,8 +1,76 @@
+import re
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+import pytz
+from pydantic import BaseModel, Field, field_validator
 
-from app.domain.enums import InputSource, IntentType, ReminderStatus, TaskStatus
+from app.domain.enums import (
+    InputSource,
+    IntentType,
+    RecurrenceType,
+    ReminderStatus,
+    TaskStatus,
+)
+
+# ─── Recurrence ──────────────────────────────────────────────────────────────
+
+
+class RecurrenceRule(BaseModel):
+    type: RecurrenceType
+    interval: int = 1
+    time_of_day: str  # "HH:MM"
+    day_of_week: int | None = None
+    day_of_month: int | None = None
+
+    @field_validator("interval")
+    @classmethod
+    def validate_interval(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("interval must be >= 1")
+        return v
+
+    @field_validator("time_of_day")
+    @classmethod
+    def validate_time_of_day(cls, v: str) -> str:
+        if not re.match(r"^\d{2}:\d{2}$", v):
+            raise ValueError("time_of_day must be HH:MM")
+        h, m = int(v[:2]), int(v[3:])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError(f"Invalid time: {v}")
+        return v
+
+    @field_validator("day_of_week")
+    @classmethod
+    def validate_day_of_week(cls, v: int | None) -> int | None:
+        if v is not None and not (0 <= v <= 6):
+            raise ValueError("day_of_week must be 0 (Mon) – 6 (Sun)")
+        return v
+
+    @field_validator("day_of_month")
+    @classmethod
+    def validate_day_of_month(cls, v: int | None) -> int | None:
+        if v is not None and not (1 <= v <= 31):
+            raise ValueError("day_of_month must be 1–31")
+        return v
+
+
+class RecurringTaskCreate(BaseModel):
+    user_id: str
+    title: str
+    raw_text: str | None = None
+    source: InputSource = InputSource.TELEGRAM
+    timezone: str = "Europe/Amsterdam"
+    recurrence: RecurrenceRule
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v: str) -> str:
+        try:
+            pytz.timezone(v)
+        except pytz.exceptions.UnknownTimeZoneError as exc:
+            raise ValueError(f"Unknown timezone: {v!r}") from exc
+        return v
+
 
 # ─── LLM parsed intent ──────────────────────────────────────────────────────
 
@@ -17,6 +85,8 @@ class ParsedIntent(BaseModel):
     clarification_question: str | None = None
     snooze_until: str | None = None  # ISO datetime string
     task_reference: str | None = None  # fuzzy title reference for complete/cancel/snooze
+    recurrence: RecurrenceRule | None = None
+    recurring_task_reference: str | None = None
 
 
 # ─── Task ────────────────────────────────────────────────────────────────────

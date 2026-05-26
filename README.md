@@ -207,6 +207,75 @@ Before raising the limit, investigate first:
 
 Only increase `mem_limit` in `docker-compose.prod.yml` if optimization is exhausted.
 
+## Recurring Tasks
+
+Tasks that repeat automatically on a schedule — daily, weekly, or monthly.
+
+### How it works
+
+A **`RecurringTask`** is a template (stores the schedule). It never fires reminders itself.
+Every 60 seconds a background job checks which templates are due and spawns a regular **`Task`** for each — which then goes through the normal reminder flow.
+
+```
+RecurringTask (template)
+      ↓  background job every 60s
+   generate_due_instances()
+      ↓  creates
+   Task (with remind_at) + Reminder
+      ↓  existing flow
+   APScheduler DateTrigger → bot.send_message
+```
+
+### Usage
+
+Say or type (Russian/English):
+
+```
+каждую пятницу в 17 пополнить фонд
+каждый день в 9 выпить таблетки
+каждое 1-е число в 10 оплатить аренду
+```
+
+Commands:
+- `/scheduled` — view all active recurring rules with pause/cancel buttons
+
+### Guarantees
+
+| Concern | Behaviour |
+|---|---|
+| Duplicate runs | Idempotency check — same slot never creates two tasks |
+| Bot was down for days | Creates **one** catch-up instance, skips the rest, advances to future |
+| Pause & resume | Resume recalculates `next_run_at` from *now* — missed cycles skipped |
+
+### Configuration
+
+```env
+ENABLE_RECURRING_TASKS=true
+RECURRING_TASK_GENERATOR_INTERVAL_SECONDS=60
+```
+
+Set `ENABLE_RECURRING_TASKS=false` to disable completely — all existing commands unaffected.
+
+### HTTP API
+
+```
+POST   /recurring-tasks              # create rule (body: RecurringTaskCreate)
+GET    /recurring-tasks?user_id=X    # list active/paused rules
+POST   /recurring-tasks/{id}/cancel
+POST   /recurring-tasks/{id}/pause
+POST   /recurring-tasks/{id}/resume
+```
+
+### Database migration
+
+```bash
+make migrate   # applies 002_add_recurring_tasks
+```
+
+Adds `recurring_tasks` table and two nullable columns to `tasks` (`recurring_task_id`, `scheduled_for`). Fully backward-compatible — existing data untouched.
+
+---
+
 ## Extending
 
 To add a new **input adapter** (e.g. mobile shortcut):

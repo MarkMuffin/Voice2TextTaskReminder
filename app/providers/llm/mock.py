@@ -2,8 +2,8 @@ from datetime import datetime, timedelta
 
 import pytz
 
-from app.domain.enums import IntentType
-from app.domain.schemas import ParsedIntent
+from app.domain.enums import IntentType, RecurrenceType
+from app.domain.schemas import ParsedIntent, RecurrenceRule
 from app.providers.llm.base import BaseIntentParser
 
 
@@ -52,6 +52,27 @@ class MockIntentParser(BaseIntentParser):
                 task_reference=text,
                 snooze_until=snooze_until,
                 confidence=0.8,
+            )
+
+        # Recurring task keywords
+        if any(
+            w in lower for w in ["каждый", "каждую", "каждое", "ежедневно", "еженедельно", "раз в"]
+        ):
+            title = text.strip().rstrip(".")
+            if len(title) > 80:
+                title = title[:80]
+            recurrence = RecurrenceRule(
+                type=RecurrenceType.DAILY,
+                interval=1,
+                time_of_day="09:00",
+            )
+            return ParsedIntent(
+                intent=IntentType.CREATE_RECURRING_TASK,
+                title=title,
+                timezone=timezone,
+                recurrence=recurrence,
+                confidence=0.8,
+                requires_confirmation=False,
             )
 
         # Default: create_reminder
