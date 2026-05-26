@@ -10,6 +10,7 @@ from app.providers.llm.base import BaseIntentParser
 from app.providers.stt.base import BaseTranscriptionProvider
 from app.services.action_router import ActionRouter
 from app.services.capture_service import CaptureService
+from app.services.list_session import ListSessionStore
 from app.services.recurring_service import RecurringTaskService
 from app.services.reminder_service import ReminderService
 from app.services.renderer import Renderer
@@ -96,4 +97,5 @@ class Container:
         )
         self.renderer = Renderer()
         self.user_settings_service = UserSettingsService(user_settings_repo)
+        self.list_session_store = ListSessionStore()
         self.scheduler: ReminderScheduler | None = None  # set after bot is created

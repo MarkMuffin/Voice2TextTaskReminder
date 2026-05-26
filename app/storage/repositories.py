@@ -69,6 +69,13 @@ class TaskRepository:
             result = await session.execute(q)
             return int(result.scalar() or 0)
 
+    async def get_by_ids(self, task_ids: list[int]) -> list[Task]:
+        if not task_ids:
+            return []
+        async with self._sf() as session:
+            result = await session.execute(select(Task).where(Task.id.in_(task_ids)))
+            return list(result.scalars().all())
+
     async def find_by_title_fuzzy(self, user_id: str, title_fragment: str) -> Task | None:
         """Find active task by partial title match."""
         async with self._sf() as session:

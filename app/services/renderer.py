@@ -1,3 +1,4 @@
+import html
 from datetime import datetime
 
 import pytz
@@ -29,19 +30,19 @@ class Renderer:
             until = format_time_until(task.remind_at)
             if until:
                 remind_str += f" ({until})"
-        text = f"✅ Добавил: <b>{task.title}</b>{remind_str}"
+        text = f"✅ Добавил: <b>{html.escape(task.title)}</b>{remind_str}"
         kb = self._task_action_keyboard(task.id)
         return text, kb
 
     # ─── Task completed ───────────────────────────────────────────────────────
 
     def task_completed(self, task: Task) -> str:
-        return f"✅ Выполнено: <b>{task.title}</b>"
+        return f"✅ Выполнено: <b>{html.escape(task.title)}</b>"
 
     # ─── Task cancelled ───────────────────────────────────────────────────────
 
     def task_cancelled(self, task: Task) -> str:
-        return f"❌ Отменено: <b>{task.title}</b>"
+        return f"❌ Отменено: <b>{html.escape(task.title)}</b>"
 
     # ─── Task snoozed ─────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ class Renderer:
             until = format_time_until(task.remind_at)
             if until:
                 remind_str += f" ({until})"
-        return f"🔁 Напомню {remind_str}: <b>{task.title}</b>"
+        return f"🔁 Напомню {remind_str}: <b>{html.escape(task.title)}</b>"
 
     # ─── Task list ────────────────────────────────────────────────────────────
 
@@ -68,13 +69,13 @@ class Renderer:
                 if until:
                     remind += f" ({until})"
             status_icon = "✅" if task.status == TaskStatus.DONE else "🔘"
-            lines.append(f"{i}. {status_icon} {task.title}{remind}")
+            lines.append(f"{i}. {status_icon} {html.escape(task.title)}{remind}")
         return "\n".join(lines)
 
     # ─── Reminder fire ────────────────────────────────────────────────────────
 
     def reminder_message(self, task: Task) -> tuple[str, InlineKeyboardMarkup]:
-        text = f"⏰ Напоминание: <b>{task.title}</b>"
+        text = f"⏰ Напоминание: <b>{html.escape(task.title)}</b>"
         builder = InlineKeyboardBuilder()
         builder.row(
             InlineKeyboardButton(
@@ -113,17 +114,23 @@ class Renderer:
     # ─── Interactive list (inline keyboard) ───────────────────────────────────
 
     def render_inline_task_list(
-        self, tasks: list[Task], completed: list[Task] | None = None
+        self,
+        tasks: list[Task],
+        completed_in_session: list[Task] | None = None,
+        visible_task_ids: list[int] | None = None,
     ) -> tuple[str, InlineKeyboardMarkup]:
         builder = InlineKeyboardBuilder()
-        completed = completed or []
+        completed_in_session = completed_in_session or []
 
-        if not tasks and not completed:
+        if visible_task_ids is not None:
+            return self._render_with_session(tasks, completed_in_session, visible_task_ids, builder)
+
+        # ── No session: original sequential rendering ──────────────────────────
+        if not tasks and not completed_in_session:
             return "📋 Активных задач нет", builder.as_markup()
 
         total = len(tasks)
         shown = tasks[:TASK_LIST_MAX]
-
         lines = ["📋 Активные задачи\n"]
 
         if shown:
@@ -136,21 +143,19 @@ class Renderer:
                     remind_line = f"\n   ⏰ {time_str}"
                 else:
                     remind_line = "\n   ⏰ без напоминания"
-                lines.append(f"{i}. ☐ {task.title}{remind_line}")
+                lines.append(f"{i}. ☐ {html.escape(task.title)}{remind_line}")
 
             if total > TASK_LIST_MAX:
                 lines.append(f"\n⚠️ Показаны первые {TASK_LIST_MAX} из {total}")
         else:
             lines.append("Все задачи выполнены! 🎉")
 
-        if completed:
+        if completed_in_session:
             lines.append("")
-            for task in completed:
-                lines.append(f"<s>☑ {task.title}</s>")
+            for task in completed_in_session:
+                lines.append(f"<s>☑ {html.escape(task.title)}</s>")
 
         text = "\n".join(lines)
-
-        # Numbered done buttons, 5 per row (only for active tasks)
         done_buttons = [
             InlineKeyboardButton(
                 text=f"✅ {i}",
@@ -160,7 +165,65 @@ class Renderer:
         ]
         for chunk_start in range(0, len(done_buttons), 5):
             builder.row(*done_buttons[chunk_start : chunk_start + 5])
+        builder.row(
+            InlineKeyboardButton(
+                text="🔄 Обновить",
+                callback_data=TaskListCallback(action="refresh").pack(),
+            )
+        )
+        return text, builder.as_markup()
 
+    def _render_with_session(
+        self,
+        tasks: list[Task],
+        completed_in_session: list[Task],
+        visible_task_ids: list[int],
+        builder: "InlineKeyboardBuilder",
+    ) -> tuple[str, InlineKeyboardMarkup]:
+        active_by_id = {t.id: t for t in tasks}
+        completed_by_id = {t.id: t for t in completed_in_session}
+
+        display_items: list[tuple[Task, bool]] = []
+        for task_id in visible_task_ids:
+            if task_id in active_by_id:
+                display_items.append((active_by_id[task_id], False))
+            elif task_id in completed_by_id:
+                display_items.append((completed_by_id[task_id], True))
+
+        if not display_items:
+            return "📋 Активных задач нет", builder.as_markup()
+
+        active_count = sum(1 for _, comp in display_items if not comp)
+        lines = ["📋 Активные задачи\n"]
+        if active_count == 0:
+            lines.append("Все задачи выполнены! 🎉\n")
+
+        done_buttons = []
+        for i, (task, is_completed) in enumerate(display_items, 1):
+            if is_completed:
+                lines.append(f"<s>☑ {html.escape(task.title)}</s>")
+            else:
+                if task.remind_at:
+                    time_str = format_remind_at(task.remind_at, task.timezone)
+                    until = format_time_until(task.remind_at)
+                    if until:
+                        time_str += f" · {until}"
+                    remind_line = f"\n   ⏰ {time_str}"
+                else:
+                    remind_line = "\n   ⏰ без напоминания"
+                lines.append(f"{i}. ☐ {html.escape(task.title)}{remind_line}")
+                done_buttons.append(
+                    InlineKeyboardButton(
+                        text=f"✅ {i}",
+                        callback_data=TaskListCallback(
+                            action="done", task_id=task.id, task_num=i
+                        ).pack(),
+                    )
+                )
+
+        text = "\n".join(lines)
+        for chunk_start in range(0, len(done_buttons), 5):
+            builder.row(*done_buttons[chunk_start : chunk_start + 5])
         builder.row(
             InlineKeyboardButton(
                 text="🔄 Обновить",
@@ -196,7 +259,9 @@ class Renderer:
             )
             next_run = _format_next_run(rule.next_run_at, rule.timezone)
             status_icon = "▶️" if rule.status == RecurringTaskStatus.ACTIVE else "⏸"
-            lines.append(f"{i}. {status_icon} <b>{rule.title}</b>\n   {human}\n   🕐 {next_run}")
+            lines.append(
+                f"{i}. {status_icon} <b>{html.escape(rule.title)}</b>\n   {human}\n   🕐 {next_run}"
+            )
 
             if rule.status == RecurringTaskStatus.ACTIVE:
                 builder.row(
@@ -238,9 +303,7 @@ class Renderer:
             rule.day_of_month,
         )
         next_run = _format_next_run(rule.next_run_at, rule.timezone)
-        return (
-            f"🔁 Запланировал: <b>{rule.title}</b>\nРасписание: {human}\nСледующий раз: {next_run}"
-        )
+        return f"🔁 Запланировал: <b>{html.escape(rule.title)}</b>\nРасписание: {human}\nСледующий раз: {next_run}"
 
     # ─── Helpers ──────────────────────────────────────────────────────────────
 

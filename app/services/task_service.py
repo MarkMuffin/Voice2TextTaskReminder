@@ -64,6 +64,9 @@ class TaskService:
         )
         return CompleteTaskResult.COMPLETED, updated
 
+    async def get_tasks_by_ids(self, task_ids: list[int]) -> list[Task]:
+        return await self._repo.get_by_ids(task_ids)
+
     async def find_by_reference(self, user_id: str, reference: str) -> Task | None:
         """Find active task by fuzzy title match."""
         return await self._repo.find_by_title_fuzzy(user_id, reference)
