@@ -100,6 +100,8 @@ def setup_callbacks(r: Router, container: "Container") -> None:
             return
         user_id = str(query.from_user.id)
         task_id = callback_data.task_id
+        chat_id = query.message.chat.id
+        message_id = query.message.message_id
 
         result, task = await container.task_service.complete_task_safe(user_id, task_id)
 
@@ -110,13 +112,23 @@ def setup_callbacks(r: Router, container: "Container") -> None:
             await query.answer("❌ Задача не найдена")
         elif result == CompleteTaskResult.ALREADY_INACTIVE:
             await query.answer("ℹ️ Задача уже закрыта")
+            container.list_session_store.mark_completed(chat_id, message_id, task_id)
         else:  # COMPLETED
             await container.reminder_service.cancel_task_reminders(task_id)
             await query.answer("✅ Готово")
+            container.list_session_store.mark_completed(chat_id, message_id, task_id)
 
-        completed = [task] if result == CompleteTaskResult.COMPLETED and task else []
+        completed_ids = container.list_session_store.get_completed_ids(chat_id, message_id)
+        visible_task_ids = container.list_session_store.get_visible_task_ids(chat_id, message_id)
         tasks = await container.task_service.list_active(user_id)
-        text, kb = container.renderer.render_inline_task_list(tasks, completed=completed)
+        completed_tasks = (
+            await container.task_service.get_tasks_by_ids(completed_ids) if completed_ids else []
+        )
+        text, kb = container.renderer.render_inline_task_list(
+            tasks,
+            completed_in_session=completed_tasks or None,
+            visible_task_ids=visible_task_ids or None,
+        )
         try:
             await query.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
         except TelegramBadRequest:
@@ -127,6 +139,11 @@ def setup_callbacks(r: Router, container: "Container") -> None:
         if not isinstance(query.message, Message):
             return
         user_id = str(query.from_user.id)
+        chat_id = query.message.chat.id
+        message_id = query.message.message_id
+
+        container.list_session_store.clear_session(chat_id, message_id)
+
         tasks = await container.task_service.list_active(user_id)
         text, kb = container.renderer.render_inline_task_list(tasks)
         try:

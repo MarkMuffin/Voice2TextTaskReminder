@@ -6,6 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from app.domain.enums import InputSource
+from app.services.renderer import TASK_LIST_MAX
 
 if TYPE_CHECKING:
     from app.container import Container
@@ -70,7 +71,10 @@ def setup_handlers(r: Router, container: "Container", bot: Bot) -> None:
         user_id = str(message.from_user.id)
         tasks = await container.task_service.list_active(user_id)
         text, kb = container.renderer.render_inline_task_list(tasks)
-        await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        sent = await message.answer(text, reply_markup=kb, parse_mode="HTML")
+        container.list_session_store.create_session(
+            message.chat.id, sent.message_id, [t.id for t in tasks[:TASK_LIST_MAX]]
+        )
 
     @r.message(Command("done"))
     async def cmd_done(message: Message) -> None:
