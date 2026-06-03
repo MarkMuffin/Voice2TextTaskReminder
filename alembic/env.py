@@ -15,6 +15,7 @@ target_metadata = Base.metadata
 
 def _get_url() -> str:
     from app.config import settings
+
     # Convert async URL to sync for Alembic
     url = settings.database_url
     return re.sub(r"\+aiosqlite", "", url)

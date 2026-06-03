@@ -5,8 +5,9 @@ Revises: 001
 Create Date: 2026-05-18
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "002"
 down_revision = "001"
@@ -47,9 +48,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_recurring_tasks_user_id", "recurring_tasks", ["user_id"])
     op.create_index("ix_recurring_tasks_next_run_at", "recurring_tasks", ["next_run_at"])
-    op.create_index(
-        "ix_recurring_tasks_user_status", "recurring_tasks", ["user_id", "status"]
-    )
+    op.create_index("ix_recurring_tasks_user_status", "recurring_tasks", ["user_id", "status"])
     op.create_index(
         "ix_recurring_tasks_next_run_status", "recurring_tasks", ["next_run_at", "status"]
     )
@@ -63,9 +62,7 @@ def upgrade() -> None:
                 nullable=True,
             )
         )
-        batch_op.add_column(
-            sa.Column("scheduled_for", sa.DateTime(timezone=True), nullable=True)
-        )
+        batch_op.add_column(sa.Column("scheduled_for", sa.DateTime(timezone=True), nullable=True))
         batch_op.create_index("ix_tasks_recurring_task_id", ["recurring_task_id"])
         batch_op.create_index(
             "uq_tasks_recurring_scheduled",
