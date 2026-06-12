@@ -34,5 +34,15 @@ class Settings(BaseSettings):
     enable_recurring_tasks: bool = True
     recurring_task_generator_interval_seconds: int = 60
 
+    # SQLite backup to Cloudflare R2 (S3-compatible API)
+    enable_db_backup_to_r2: bool = False
+    db_backup_interval_seconds: int = 3600
+    db_backup_r2_endpoint_url: str = ""
+    db_backup_r2_bucket: str = ""
+    db_backup_r2_access_key_id: str = ""
+    db_backup_r2_secret_access_key: str = ""
+    db_backup_r2_prefix: str = "db-backups"
+    db_backup_r2_region: str = "auto"
+
 
 settings = Settings()
