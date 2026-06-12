@@ -167,7 +167,32 @@ cp /opt/voice-bot/data/app.db /opt/voice-bot/data/app.db.bak
 
 > Automate backups with a cron job or `rsync` to off-site storage.
 
-### 4. Observability
+### 4. Cloudflare R2 SQLite backups
+
+The app can upload a SQLite snapshot to any S3-compatible Cloudflare R2 bucket.
+Backups are disabled by default and check hourly when enabled.
+
+```bash
+ENABLE_DB_BACKUP_TO_R2=true
+DB_BACKUP_INTERVAL_SECONDS=3600
+DB_BACKUP_R2_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
+DB_BACKUP_R2_BUCKET=your-bucket
+DB_BACKUP_R2_ACCESS_KEY_ID=your-access-key-id
+DB_BACKUP_R2_SECRET_ACCESS_KEY=your-secret-access-key
+DB_BACKUP_R2_PREFIX=db-backups
+DB_BACKUP_R2_REGION=auto
+```
+
+Each run creates a consistent SQLite snapshot and compares its SHA-256 checksum
+with the current `latest` backup metadata. If the database has not changed,
+the upload is skipped. When it has changed, the app writes both:
+- `db-backups/latest/app.db`
+- `db-backups/snapshots/<timestamp>-app.db`
+
+Configure an R2 lifecycle rule for the `db-backups/snapshots/` prefix if you do
+not want hourly historical snapshots retained forever.
+
+### 5. Observability
 
 ```bash
 # Container status
@@ -191,7 +216,7 @@ docker compose -f docker-compose.prod.yml restart app
 docker stats
 ```
 
-### 5. Memory troubleshooting (OOM at 256 MB)
+### 6. Memory troubleshooting (OOM at 256 MB)
 
 Container is limited to **256 MB RAM**. If it OOM-kills:
 
