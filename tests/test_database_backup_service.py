@@ -1,4 +1,5 @@
 import sqlite3
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,9 +11,16 @@ from app.services.database_backup_service import (
 )
 
 
+class FakeClientError(Exception):
+    def __init__(self, code: str) -> None:
+        self.response = {"Error": {"Code": code}}
+        super().__init__(code)
+
+
 class FakeS3Client:
     def __init__(self) -> None:
         self.uploads: list[dict[str, object]] = []
+        self.objects: dict[str, dict[str, object]] = {}
 
     def upload_file(
         self,
@@ -24,14 +32,28 @@ class FakeS3Client:
         assert Path(filename).exists()
         with sqlite3.connect(filename) as conn:
             title = conn.execute("select title from tasks").fetchone()[0]
+        extra_args = kwargs.get("ExtraArgs")
+        metadata: Mapping[str, str] = {}
+        if isinstance(extra_args, Mapping):
+            extra_metadata = extra_args.get("Metadata")
+            if isinstance(extra_metadata, Mapping):
+                metadata = {str(key): str(value) for key, value in extra_metadata.items()}
+        self.objects[key] = {"bucket": bucket, "metadata": metadata}
         self.uploads.append(
             {
                 "bucket": bucket,
                 "key": key,
-                "extra_args": kwargs.get("ExtraArgs"),
+                "extra_args": extra_args,
+                "metadata": metadata,
                 "title": title,
             }
         )
+
+    def head_object(self, **kwargs: object) -> Mapping[str, object]:
+        key = str(kwargs["Key"])
+        if key not in self.objects:
+            raise FakeClientError("404")
+        return {"Metadata": self.objects[key]["metadata"]}
 
 
 def _create_sqlite_db(path: Path) -> None:
@@ -122,7 +144,39 @@ async def test_backup_once_uploads_timestamped_and_latest_sqlite_snapshots(tmp_p
         "prod/backups/snapshots/20260612T103045Z-app.db",
         "prod/backups/latest/app.db",
     ]
+    assert all(upload["metadata"]["sha256"] for upload in fake_s3.uploads)
     assert {upload["title"] for upload in fake_s3.uploads} == {"Call mom"}
+
+
+async def test_backup_once_skips_upload_when_latest_checksum_matches(tmp_path, caplog):
+    db_path = tmp_path / "app.db"
+    _create_sqlite_db(db_path)
+    fake_s3 = FakeS3Client()
+    backup_config = DatabaseBackupConfig(
+        enabled=True,
+        sqlite_path=db_path,
+        endpoint_url="https://example.r2.cloudflarestorage.com",
+        bucket="voice-bot",
+        access_key_id="access-key",
+        secret_access_key="secret-key",
+        prefix="prod/backups",
+    )
+    service = DatabaseBackupService(
+        backup_config,
+        s3_client=fake_s3,
+        now=lambda: datetime(2026, 6, 12, 10, 30, 45, tzinfo=UTC),
+    )
+
+    first_result = await service.backup_once()
+    fake_s3.uploads.clear()
+    caplog.set_level("INFO")
+
+    second_result = await service.backup_once()
+
+    assert first_result is not None
+    assert second_result is None
+    assert fake_s3.uploads == []
+    assert "Skipping database backup: SQLite snapshot unchanged" in caplog.text
 
 
 async def test_backup_once_skips_when_disabled(tmp_path):

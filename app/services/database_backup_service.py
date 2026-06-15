@@ -1,8 +1,9 @@
 import asyncio
+import hashlib
 import logging
 import sqlite3
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +25,8 @@ class S3Client(Protocol):
         key: str,
         **kwargs: object,
     ) -> None: ...
+
+    def head_object(self, **kwargs: object) -> Mapping[str, object]: ...
 
 
 @dataclass(frozen=True)
@@ -112,11 +115,26 @@ class DatabaseBackupService:
             _create_sqlite_snapshot(sqlite_path, snapshot_path)
 
             size_bytes = snapshot_path.stat().st_size
+            checksum_sha256 = _sha256_file(snapshot_path)
             latest_key = _object_key(self._config.prefix, "latest", sqlite_path.name)
             snapshot_key = _object_key(
                 self._config.prefix, "snapshots", f"{timestamp}-{sqlite_path.name}"
             )
-            self._upload_snapshot(snapshot_path, latest_key, snapshot_key, timestamp)
+            client = self._s3_client or _build_r2_client(self._config)
+            latest_checksum = _latest_backup_checksum(client, self._config.bucket, latest_key)
+            if latest_checksum == checksum_sha256:
+                logger.info(
+                    "Skipping database backup: SQLite snapshot unchanged "
+                    "(bucket=%s latest_key=%s checksum_sha256=%s)",
+                    self._config.bucket,
+                    latest_key,
+                    checksum_sha256,
+                )
+                return None
+
+            self._upload_snapshot(
+                client, snapshot_path, latest_key, snapshot_key, timestamp, checksum_sha256
+            )
 
         return DatabaseBackupResult(
             bucket=self._config.bucket,
@@ -127,17 +145,19 @@ class DatabaseBackupService:
 
     def _upload_snapshot(
         self,
+        client: S3Client,
         snapshot_path: Path,
         latest_key: str,
         snapshot_key: str,
         timestamp: str,
+        checksum_sha256: str,
     ) -> None:
-        client = self._s3_client or _build_r2_client(self._config)
         extra_args: dict[str, str | dict[str, str]] = {
             "ContentType": "application/vnd.sqlite3",
             "Metadata": {
                 "source": "voice2text-task-reminder",
                 "created-at": timestamp,
+                "sha256": checksum_sha256,
             },
         }
         client.upload_file(
@@ -153,10 +173,12 @@ class DatabaseBackupService:
             ExtraArgs=extra_args,
         )
         logger.info(
-            "Uploaded SQLite backup to R2 bucket=%s latest_key=%s snapshot_key=%s",
+            "Uploaded SQLite backup to R2 bucket=%s latest_key=%s snapshot_key=%s "
+            "checksum_sha256=%s",
             self._config.bucket,
             latest_key,
             snapshot_key,
+            checksum_sha256,
         )
 
 
@@ -184,6 +206,40 @@ def _create_sqlite_snapshot(source_path: Path, snapshot_path: Path) -> None:
             snapshot.close()
     finally:
         source.close()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _latest_backup_checksum(client: S3Client, bucket: str, latest_key: str) -> str | None:
+    try:
+        response = client.head_object(Bucket=bucket, Key=latest_key)
+    except Exception as exc:
+        if _is_missing_object_error(exc):
+            return None
+        raise
+
+    metadata = response.get("Metadata")
+    if not isinstance(metadata, Mapping):
+        return None
+    checksum = metadata.get("sha256")
+    return checksum if isinstance(checksum, str) else None
+
+
+def _is_missing_object_error(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, Mapping):
+        return False
+    error = response.get("Error")
+    if not isinstance(error, Mapping):
+        return False
+    code = error.get("Code")
+    return str(code) in {"404", "NoSuchKey", "NotFound"}
 
 
 def _object_key(prefix: str, *parts: str) -> str:

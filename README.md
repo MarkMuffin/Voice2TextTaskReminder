@@ -170,7 +170,7 @@ cp /opt/voice-bot/data/app.db /opt/voice-bot/data/app.db.bak
 ### 4. Cloudflare R2 SQLite backups
 
 The app can upload a SQLite snapshot to any S3-compatible Cloudflare R2 bucket.
-Backups are disabled by default and run hourly when enabled.
+Backups are disabled by default and check hourly when enabled.
 
 ```bash
 ENABLE_DB_BACKUP_TO_R2=true
@@ -183,7 +183,9 @@ DB_BACKUP_R2_PREFIX=db-backups
 DB_BACKUP_R2_REGION=auto
 ```
 
-Each run creates a consistent SQLite snapshot before upload and writes both:
+Each run creates a consistent SQLite snapshot and compares its SHA-256 checksum
+with the current `latest` backup metadata. If the database has not changed,
+the upload is skipped. When it has changed, the app writes both:
 - `db-backups/latest/app.db`
 - `db-backups/snapshots/<timestamp>-app.db`
 
