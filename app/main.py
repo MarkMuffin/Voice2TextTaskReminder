@@ -17,6 +17,7 @@ from app.container import Container
 from app.domain.enums import TaskStatus
 from app.domain.models import Base, Task
 from app.scheduler.scheduler import ReminderScheduler
+from app.services.database_backup_service import DatabaseBackupConfig, DatabaseBackupService
 from app.storage.db import create_engine, create_session_factory
 
 logging.basicConfig(
@@ -90,6 +91,15 @@ async def main() -> None:
 
     if settings.enable_recurring_tasks:
         scheduler.start_recurring_generator(settings.recurring_task_generator_interval_seconds)
+
+    if settings.enable_db_backup_to_r2:
+        backup_config = DatabaseBackupConfig.from_settings(settings)
+        disabled_reason = backup_config.disabled_reason()
+        if disabled_reason:
+            logger.warning("Database backup to R2 not started: %s", disabled_reason)
+        else:
+            backup_service = DatabaseBackupService(backup_config)
+            scheduler.start_database_backup(backup_service, settings.db_backup_interval_seconds)
 
     dp = create_dispatcher(container, bot)
     fastapi_app = create_app(container)

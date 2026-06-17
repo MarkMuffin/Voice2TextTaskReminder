@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from aiogram import Bot
 
     from app.container import Container
+    from app.services.database_backup_service import DatabaseBackupService
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,22 @@ class ReminderScheduler:
         )
         logger.info("Recurring task generator started (interval=%ds)", interval_seconds)
 
+    def start_database_backup(
+        self, backup_service: "DatabaseBackupService", interval_seconds: int
+    ) -> None:
+        from apscheduler.triggers.interval import IntervalTrigger
+
+        self._scheduler.add_job(
+            self._run_database_backup,
+            IntervalTrigger(seconds=interval_seconds),
+            args=[backup_service],
+            id="database_backup_to_r2",
+            next_run_time=datetime.now(UTC),
+            replace_existing=True,
+            misfire_grace_time=300,
+        )
+        logger.info("Database backup to R2 started (interval=%ds)", interval_seconds)
+
     async def _generate_recurring_tasks(self) -> None:
         now = datetime.now(UTC)
         if self._container.recurring_service is None:
@@ -157,3 +174,17 @@ class ReminderScheduler:
                         )
         except Exception as exc:
             logger.error("Recurring generation failed: %s", exc)
+
+    async def _run_database_backup(self, backup_service: "DatabaseBackupService") -> None:
+        try:
+            result = await backup_service.backup_once()
+            if result:
+                logger.info(
+                    "Database backup completed: bucket=%s latest_key=%s snapshot_key=%s size=%d",
+                    result.bucket,
+                    result.latest_key,
+                    result.snapshot_key,
+                    result.size_bytes,
+                )
+        except Exception:
+            logger.exception("Database backup to R2 failed")
