@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytz
@@ -50,8 +51,9 @@ def apply_time_keyword(dt: datetime, text: str, tz_name: str | None = None) -> d
     Returns dt unchanged if no keyword matched.
     """
     text_lower = text.lower()
-    for keyword, (hour, minute) in _TIME_KEYWORDS.items():
-        if keyword in text_lower:
+    for keyword in sorted(_TIME_KEYWORDS, key=len, reverse=True):
+        hour, minute = _TIME_KEYWORDS[keyword]
+        if re.search(rf"\b{re.escape(keyword)}\b", text_lower):
             return dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
     return dt
 

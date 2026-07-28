@@ -63,6 +63,6 @@ def create_intent_factory():
     def factory(**kwargs) -> ParsedIntent:
         defaults = dict(intent=IntentType.CREATE_REMINDER, confidence=0.9)
         defaults.update(kwargs)
-        return ParsedIntent(**defaults)
+        return ParsedIntent.model_validate(defaults)
 
     return factory
