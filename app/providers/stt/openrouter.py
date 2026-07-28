@@ -5,6 +5,7 @@ import httpx
 from app.providers.stt.base import BaseTranscriptionProvider, TranscriptionError
 
 OPENROUTER_STT_URL = "https://openrouter.ai/api/v1/audio/transcriptions"
+OPENROUTER_DEFAULT_STT_MODEL = "openai/whisper-large-v3"
 
 # OGG is not in their documented list; convert to format they support
 _FORMAT_MAP = {
@@ -26,7 +27,7 @@ class OpenRouterSTTProvider(BaseTranscriptionProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "openai/whisper-large-v3-turbo",
+        model: str = OPENROUTER_DEFAULT_STT_MODEL,
         language: str | None = None,
     ) -> None:
         self.api_key = api_key

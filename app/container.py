@@ -25,6 +25,49 @@ from app.storage.repositories import (
 )
 
 
+def _build_fallback_stt(cfg: Settings) -> BaseTranscriptionProvider:
+    providers: list[tuple[str, BaseTranscriptionProvider]] = []
+
+    groq_key = cfg.groq_api_key or cfg.stt_api_key
+    if groq_key:
+        from app.providers.stt.groq import GROQ_DEFAULT_MODEL, GroqWhisperProvider
+
+        providers.append(
+            (
+                "groq",
+                GroqWhisperProvider(
+                    api_key=groq_key,
+                    model=cfg.groq_stt_model or GROQ_DEFAULT_MODEL,
+                ),
+            )
+        )
+
+    if cfg.openrouter_api_key:
+        from app.providers.stt.openrouter import (
+            OPENROUTER_DEFAULT_STT_MODEL,
+            OpenRouterSTTProvider,
+        )
+
+        providers.append(
+            (
+                "openrouter",
+                OpenRouterSTTProvider(
+                    api_key=cfg.openrouter_api_key,
+                    model=cfg.openrouter_stt_model or OPENROUTER_DEFAULT_STT_MODEL,
+                ),
+            )
+        )
+
+    if providers:
+        from app.providers.stt.fallback import FallbackTranscriptionProvider
+
+        return FallbackTranscriptionProvider(providers)
+
+    from app.providers.stt.mock import MockTranscriptionProvider
+
+    return MockTranscriptionProvider()
+
+
 def _build_stt(cfg: Settings) -> BaseTranscriptionProvider:
     match cfg.stt_provider.lower():
         case "openai":
@@ -36,24 +79,83 @@ def _build_stt(cfg: Settings) -> BaseTranscriptionProvider:
                 base_url=cfg.stt_base_url,
             )
         case "groq":
-            from app.providers.stt.groq import GroqWhisperProvider
+            from app.providers.stt.groq import GROQ_DEFAULT_MODEL, GroqWhisperProvider
 
-            return GroqWhisperProvider(api_key=cfg.stt_api_key, model=cfg.stt_model)
+            return GroqWhisperProvider(
+                api_key=cfg.groq_api_key or cfg.stt_api_key,
+                model=cfg.groq_stt_model or GROQ_DEFAULT_MODEL,
+            )
         case "openrouter":
-            from app.providers.stt.openrouter import OpenRouterSTTProvider
+            from app.providers.stt.openrouter import (
+                OPENROUTER_DEFAULT_STT_MODEL,
+                OpenRouterSTTProvider,
+            )
 
             return OpenRouterSTTProvider(
-                api_key=cfg.stt_api_key or cfg.openrouter_api_key,
-                model=cfg.stt_model,
+                api_key=cfg.openrouter_api_key or cfg.stt_api_key,
+                model=cfg.openrouter_stt_model or OPENROUTER_DEFAULT_STT_MODEL,
             )
+        case "fallback" | "auto" | "route":
+            return _build_fallback_stt(cfg)
         case _:
             from app.providers.stt.mock import MockTranscriptionProvider
 
             return MockTranscriptionProvider()
 
 
+def _build_fallback_llm(cfg: Settings) -> BaseIntentParser:
+    providers: list[tuple[str, BaseIntentParser]] = []
+
+    if cfg.groq_api_key:
+        from app.providers.llm.groq import GroqIntentParser
+
+        providers.append(
+            (
+                "groq",
+                GroqIntentParser(
+                    api_key=cfg.groq_api_key,
+                    model=cfg.groq_model,
+                    base_url=cfg.groq_base_url,
+                    raise_on_failure=True,
+                ),
+            )
+        )
+
+    if cfg.openrouter_api_key:
+        from app.providers.llm.openrouter import OpenRouterIntentParser
+
+        providers.append(
+            (
+                "openrouter",
+                OpenRouterIntentParser(
+                    api_key=cfg.openrouter_api_key,
+                    model=cfg.openrouter_model,
+                    base_url=cfg.openrouter_base_url,
+                    raise_on_failure=True,
+                ),
+            )
+        )
+
+    if providers:
+        from app.providers.llm.fallback import FallbackIntentParser
+
+        return FallbackIntentParser(providers)
+
+    from app.providers.llm.mock import MockIntentParser
+
+    return MockIntentParser()
+
+
 def _build_llm(cfg: Settings) -> BaseIntentParser:
     match cfg.llm_provider.lower():
+        case "groq":
+            from app.providers.llm.groq import GroqIntentParser
+
+            return GroqIntentParser(
+                api_key=cfg.groq_api_key,
+                model=cfg.groq_model,
+                base_url=cfg.groq_base_url,
+            )
         case "openrouter":
             from app.providers.llm.openrouter import OpenRouterIntentParser
 
@@ -62,6 +164,8 @@ def _build_llm(cfg: Settings) -> BaseIntentParser:
                 model=cfg.openrouter_model,
                 base_url=cfg.openrouter_base_url,
             )
+        case "fallback" | "auto" | "route":
+            return _build_fallback_llm(cfg)
         case _:
             from app.providers.llm.mock import MockIntentParser
 

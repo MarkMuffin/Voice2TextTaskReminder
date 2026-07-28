@@ -15,16 +15,21 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///data/app.db"
 
     # LLM
-    llm_provider: str = "mock"  # mock | openrouter
+    llm_provider: str = "fallback"  # mock | groq | openrouter | fallback
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
     openrouter_api_key: str = ""
-    openrouter_model: str = "openai/gpt-4o-mini"
+    openrouter_model: str = "deepseek/deepseek-v4-flash"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # STT
-    stt_provider: str = "mock"  # mock | openai | groq
+    stt_provider: str = "fallback"  # mock | openai | groq | openrouter | fallback
     stt_api_key: str = ""
-    stt_model: str = "whisper-1"
+    stt_model: str = "whisper-1"  # only when stt_provider=openai
     stt_base_url: str = "https://api.openai.com/v1"
+    groq_stt_model: str = ""
+    openrouter_stt_model: str = ""
 
     # App
     default_timezone: str = "Europe/Amsterdam"

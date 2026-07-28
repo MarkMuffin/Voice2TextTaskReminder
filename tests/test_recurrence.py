@@ -1,6 +1,7 @@
 """Tests for recurrence calculation utilities (sync)."""
 
 from datetime import datetime
+from typing import cast
 
 import pytz
 
@@ -8,7 +9,7 @@ from app.utils.recurrence import calculate_next_run, format_recurrence_human_rea
 
 
 def _utc(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime:
-    return pytz.utc.localize(datetime(year, month, day, hour, minute))
+    return cast(datetime, pytz.utc.localize(datetime(year, month, day, hour, minute)))
 
 
 TZ = "Europe/Amsterdam"

@@ -15,7 +15,7 @@ format:
 	ruff format app/ tests/
 
 typecheck:
-	mypy app/
+	mypy app/ tests/
 
 ci: lint typecheck test
 

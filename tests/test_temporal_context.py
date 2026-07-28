@@ -2,6 +2,7 @@
 
 import json
 from datetime import datetime
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,7 +25,7 @@ def _dt(
     tz_name: str = "Europe/Amsterdam",
 ) -> datetime:
     tz = pytz.timezone(tz_name)
-    return tz.localize(datetime(year, month, day, hour, minute, 0))
+    return cast(datetime, tz.localize(datetime(year, month, day, hour, minute, 0)))
 
 
 def _make_parser() -> OpenRouterIntentParser:

@@ -30,8 +30,8 @@ Output
 |--------|-------------|
 | `app/domain/` | Models (SQLAlchemy), schemas (Pydantic), enums |
 | `app/storage/` | DB setup, async repositories |
-| `app/providers/stt/` | STT abstraction: Mock, OpenAI-compatible, Groq |
-| `app/providers/llm/` | LLM abstraction: Mock, OpenRouter |
+| `app/providers/stt/` | STT abstraction: Mock, OpenAI-compatible, Groq, OpenRouter, fallback route |
+| `app/providers/llm/` | LLM abstraction: Mock, Groq, OpenRouter, fallback route |
 | `app/services/` | TaskService, ReminderService, CaptureService, ActionRouter, Renderer |
 | `app/adapters/telegram/` | aiogram bot, handlers, callbacks |
 | `app/adapters/http/` | FastAPI capture API |
@@ -55,8 +55,9 @@ cp .env.example .env
 
 Key variables:
 - `TELEGRAM_BOT_TOKEN` — from @BotFather
-- `LLM_PROVIDER=openrouter` + `OPENROUTER_API_KEY` — for real LLM parsing
-- `STT_PROVIDER=openai` + `STT_API_KEY` — for real speech-to-text (or `groq`)
+- `LLM_PROVIDER=fallback` + `GROQ_API_KEY` / `OPENROUTER_API_KEY` — tries Groq first, then OpenRouter
+- `GROQ_MODEL=openai/gpt-oss-120b` and `OPENROUTER_MODEL=deepseek/deepseek-v4-flash` — primary and fallback LLM models
+- `STT_PROVIDER=fallback` — tries Groq Whisper first, then OpenRouter STT
 - `STT_PROVIDER=mock` / `LLM_PROVIDER=mock` — for local testing without API keys
 
 ### 3. Run
