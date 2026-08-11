@@ -57,7 +57,7 @@ Key variables:
 - `TELEGRAM_BOT_TOKEN` — from @BotFather
 - `LLM_PROVIDER=fallback` + `GROQ_API_KEY` / `OPENROUTER_API_KEY` — tries Groq first, then OpenRouter
 - `GROQ_MODEL=openai/gpt-oss-120b` and `OPENROUTER_MODEL=deepseek/deepseek-v4-flash` — primary and fallback LLM models
-- `STT_PROVIDER=fallback` — tries Groq Whisper first, then OpenRouter STT
+- `STT_PROVIDER=fallback` — tries Groq Whisper, then OpenRouter STT, then OpenAI-compatible STT when `STT_API_KEY` is configured
 - `STT_PROVIDER=mock` / `LLM_PROVIDER=mock` — for local testing without API keys
 
 ### 3. Run

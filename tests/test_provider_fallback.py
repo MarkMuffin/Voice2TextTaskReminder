@@ -12,6 +12,7 @@ from app.providers.llm.fallback import FallbackIntentParser
 from app.providers.llm.openai_compatible import _safe_fallback
 from app.providers.stt.base import BaseTranscriptionProvider, TranscriptionError
 from app.providers.stt.fallback import FallbackTranscriptionProvider
+from app.providers.stt.openai_compatible import OpenAICompatibleSTTProvider
 from app.providers.stt.openrouter import OpenRouterSTTProvider
 
 
@@ -238,6 +239,23 @@ def test_container_builds_stt_fallback_in_groq_then_openrouter_order():
     assert [name for name, _ in provider.providers] == ["groq", "openrouter"]
     assert provider.providers[0][1].model == "whisper-large-v3"
     assert provider.providers[1][1].model == "openai/whisper-large-v3"
+
+
+def test_container_uses_openai_stt_key_as_fallback_provider():
+    cfg = Settings(
+        _env_file=None,
+        stt_provider="fallback",
+        stt_api_key="openai-key",
+        stt_model="whisper-1",
+        stt_base_url="https://api.openai.com/v1",
+    )
+
+    provider = _build_stt(cfg)
+
+    assert isinstance(provider, FallbackTranscriptionProvider)
+    assert [name for name, _ in provider.providers] == ["openai"]
+    assert isinstance(provider.providers[0][1], OpenAICompatibleSTTProvider)
+    assert provider.providers[0][1].api_key == "openai-key"
 
 
 def test_container_direct_openrouter_stt_prefers_openrouter_key():
