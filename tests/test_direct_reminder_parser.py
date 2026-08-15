@@ -4,6 +4,7 @@ import pytest
 import pytz
 
 from app.domain.enums import IntentType
+from app.domain.schemas import ParsedIntent
 from app.providers.llm.base import BaseIntentParser
 from app.services.direct_reminder_parser import DirectReminderParser
 
@@ -54,6 +55,73 @@ def test_preserves_relative_duration_as_reminder_time(parser):
     assert intent is not None
     assert intent.title == "тест"
     assert intent.remind_at == "2026-07-28T12:10:00+03:00"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_title", "expected_remind_at"),
+    [
+        ("Напомни через 3 дня оплатить счёт", "оплатить счёт", "2026-07-31T12:00:00+03:00"),
+        (
+            "Напомни через два месяца продлить подписку",
+            "продлить подписку",
+            "2026-09-28T12:00:00+03:00",
+        ),
+        (
+            "Напомни через двадцать один день забрать заказ",
+            "забрать заказ",
+            "2026-08-18T12:00:00+03:00",
+        ),
+        ("Напомни через год проверить договор", "проверить договор", "2027-07-28T12:00:00+03:00"),
+        (
+            "Напомни через три года обновить документы",
+            "обновить документы",
+            "2029-07-28T12:00:00+03:00",
+        ),
+    ],
+)
+def test_parses_calendar_relative_durations(parser, text, expected_title, expected_remind_at):
+    intent = parser.parse(text, "Europe/Tallinn")
+
+    assert intent is not None
+    assert intent.title == expected_title
+    assert intent.remind_at == expected_remind_at
+
+
+def test_calendar_duration_clamps_to_last_day_of_month():
+    tz = pytz.timezone("Europe/Tallinn")
+    now = tz.localize(datetime(2026, 1, 31, 12, 0))
+    parser = DirectReminderParser(now=lambda _: now)
+
+    intent = parser.parse("Напомни через месяц оплатить аренду", "Europe/Tallinn")
+
+    assert intent is not None
+    assert intent.remind_at == "2026-02-28T12:00:00+02:00"
+
+
+def test_calendar_duration_preserves_target_date_with_explicit_time(parser):
+    intent = parser.parse("Напомни через 2 дня в 10 вечера позвонить маме", "Europe/Tallinn")
+
+    assert intent is not None
+    assert intent.title == "позвонить маме"
+    assert intent.remind_at == "2026-07-30T22:00:00+03:00"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_remind_at"),
+    [
+        ("Напомни сегодня в 9 утра позвонить маме", "2026-07-29T09:00:00+03:00"),
+        ("Напомни позвонить маме сегодня", "2026-07-29T09:00:00+03:00"),
+    ],
+)
+def test_today_in_the_past_rolls_over_to_tomorrow(text, expected_remind_at):
+    tz = pytz.timezone("Europe/Tallinn")
+    now = tz.localize(datetime(2026, 7, 28, 18, 0))
+    parser = DirectReminderParser(now=lambda _: now)
+
+    intent = parser.parse(text, "Europe/Tallinn")
+
+    assert intent is not None
+    assert intent.remind_at == expected_remind_at
 
 
 def test_uses_correct_offset_after_dst_transition():
@@ -150,6 +218,15 @@ class _FailingParser(BaseIntentParser):
         raise AssertionError("LLM must not be called for a direct reminder")
 
 
+class _TrackingParser(BaseIntentParser):
+    def __init__(self) -> None:
+        self.called = False
+
+    async def parse(self, text: str, timezone: str = "Europe/Amsterdam") -> ParsedIntent:
+        self.called = True
+        return ParsedIntent(intent=IntentType.UNKNOWN, confidence=1.0)
+
+
 @pytest.mark.asyncio
 async def test_capture_service_skips_llm_for_direct_reminder(container):
     container.capture_service._llm = _FailingParser()
@@ -162,3 +239,17 @@ async def test_capture_service_skips_llm_for_direct_reminder(container):
 
     assert intent.title == "оплатить интернет"
     assert intent.remind_at is not None
+
+
+@pytest.mark.asyncio
+async def test_capture_service_routes_unknown_relative_duration_to_llm(container):
+    llm = _TrackingParser()
+    container.capture_service._llm = llm
+
+    await container.capture_service.process_text(
+        user_id="direct-parser-user",
+        text="Напомни через несколько дней купить подарок",
+        timezone="Europe/Tallinn",
+    )
+
+    assert llm.called is True

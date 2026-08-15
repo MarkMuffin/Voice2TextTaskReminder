@@ -28,15 +28,14 @@ from app.storage.repositories import (
 def _build_fallback_stt(cfg: Settings) -> BaseTranscriptionProvider:
     providers: list[tuple[str, BaseTranscriptionProvider]] = []
 
-    groq_key = cfg.groq_api_key or cfg.stt_api_key
-    if groq_key:
+    if cfg.groq_api_key:
         from app.providers.stt.groq import GROQ_DEFAULT_MODEL, GroqWhisperProvider
 
         providers.append(
             (
                 "groq",
                 GroqWhisperProvider(
-                    api_key=groq_key,
+                    api_key=cfg.groq_api_key,
                     model=cfg.groq_stt_model or GROQ_DEFAULT_MODEL,
                 ),
             )
@@ -54,6 +53,20 @@ def _build_fallback_stt(cfg: Settings) -> BaseTranscriptionProvider:
                 OpenRouterSTTProvider(
                     api_key=cfg.openrouter_api_key,
                     model=cfg.openrouter_stt_model or OPENROUTER_DEFAULT_STT_MODEL,
+                ),
+            )
+        )
+
+    if cfg.stt_api_key:
+        from app.providers.stt.openai_compatible import OpenAICompatibleSTTProvider
+
+        providers.append(
+            (
+                "openai",
+                OpenAICompatibleSTTProvider(
+                    api_key=cfg.stt_api_key,
+                    model=cfg.stt_model,
+                    base_url=cfg.stt_base_url,
                 ),
             )
         )

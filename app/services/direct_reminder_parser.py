@@ -5,6 +5,7 @@ preserve the user's wording and only remove the command and time fragments.
 """
 
 import re
+from calendar import monthrange
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 from typing import cast
@@ -24,7 +25,50 @@ _COMPOUND_DURATION_RE = re.compile(
     r"\bчерез\s+(\d+)\s+(?:час(?:а|ов)?|ч)\s+(?:и\s+)?(\d+)\s+(?:минут(?:у|ы)?|мин)\b",
     re.IGNORECASE,
 )
-_CLOCK_PERIOD_SUFFIXES = {"утра", "дня", "вечера", "ночи"}
+_RUSSIAN_ONES = {
+    "один": 1,
+    "одна": 1,
+    "одно": 1,
+    "одну": 1,
+    "два": 2,
+    "две": 2,
+    "три": 3,
+    "четыре": 4,
+    "пять": 5,
+    "шесть": 6,
+    "семь": 7,
+    "восемь": 8,
+    "девять": 9,
+    "десять": 10,
+    "одиннадцать": 11,
+    "двенадцать": 12,
+    "тринадцать": 13,
+    "четырнадцать": 14,
+    "пятнадцать": 15,
+    "шестнадцать": 16,
+    "семнадцать": 17,
+    "восемнадцать": 18,
+    "девятнадцать": 19,
+}
+_RUSSIAN_TENS = {
+    "двадцать": 20,
+    "тридцать": 30,
+    "сорок": 40,
+    "пятьдесят": 50,
+    "шестьдесят": 60,
+    "семьдесят": 70,
+    "восемьдесят": 80,
+    "девяносто": 90,
+}
+_NUMBER_WORD = "|".join((*_RUSSIAN_TENS, *_RUSSIAN_ONES))
+_NUMBER_WORD_PATTERN = rf"(?:{_NUMBER_WORD})(?:\s+(?:{_NUMBER_WORD}))?"
+_CALENDAR_DURATION_RE = re.compile(
+    rf"\bчерез\s+(?:(?P<quantity>\d+|{_NUMBER_WORD_PATTERN})\s+)?"
+    r"(?P<unit>день|дня|дней|месяц|месяца|месяцев|год|года|лет)\b",
+    re.IGNORECASE,
+)
+_THROUGH_RE = re.compile(r"\bчерез\b", re.IGNORECASE)
+_CLOCK_PERIOD_SUFFIXES = ("утра", "дня", "вечера", "ночи")
 
 _WEEKDAYS = {
     "понедельник": 0,
@@ -64,6 +108,13 @@ class DirectReminderParser:
             now = tz.localize(now)
 
         remind_at, fragments = self._extract_datetime(text, now, tz)
+        # A phrase beginning with "через" is a relative duration.  If this
+        # literal parser could not understand it, let the LLM handle it rather
+        # than silently creating an unscheduled task.
+        if _THROUGH_RE.search(text) and not any(
+            "через" in fragment.lower() for fragment in fragments
+        ):
+            return None
         title = self._extract_title(text, fragments)
         # A missing title needs an answer from the user/LLM. A missing time does
         # not: create an ordinary task without a scheduled reminder instead.
@@ -89,6 +140,7 @@ class DirectReminderParser:
             _COMPOUND_DURATION_RE.search(lower)
             or _IN_MINUTES_RE.search(lower)
             or _IN_HOURS_RE.search(lower)
+            or _CALENDAR_DURATION_RE.search(lower)
         )
         has_calendar_date = relative is not None and not has_relative_duration
         if relative is not None:
@@ -97,8 +149,10 @@ class DirectReminderParser:
         else:
             dt = None
 
-        clock = _CLOCK_RE.search(lower)
-        has_clock = clock is not None and self._is_clock_match(clock)
+        clock = next(
+            (match for match in _CLOCK_RE.finditer(lower) if self._is_clock_match(match)), None
+        )
+        has_clock = clock is not None
         if has_clock:
             assert clock is not None
             hour, minute = int(clock.group(1)), int(clock.group(2) or 0)
@@ -123,12 +177,12 @@ class DirectReminderParser:
                 fragments.append(phrase)
                 break
 
-        period_suffix = self._find_clock_period_suffix(lower) if has_clock else None
+        period_suffix = self._find_clock_period_suffix(lower, clock) if has_clock else None
         if period_suffix:
             assert clock is not None and dt is not None
             clock_hour = int(clock.group(1))
             hour_with_period = self._hour_with_period(clock_hour, period_suffix)
-            target_date = dt.date() if has_calendar_date else now.date()
+            target_date = dt.date() if relative is not None else now.date()
             dt = self._at_local_time(tz, target_date, hour_with_period, int(clock.group(2) or 0))
             if not has_calendar_date and dt <= now:
                 dt = self._at_local_time(
@@ -146,6 +200,12 @@ class DirectReminderParser:
             and not matched_time_keyword
         ):
             dt = self._at_local_time(tz, dt.date(), 9, 0)
+
+        # Unlike other explicit calendar dates, "сегодня" can name a time
+        # that has already passed. Schedule that reminder for tomorrow instead
+        # of creating a reminder which can never fire.
+        if dt is not None and "сегодня" in lower and dt <= now:
+            dt = self._at_local_time(tz, dt.date() + timedelta(days=1), dt.hour, dt.minute)
         return dt, fragments
 
     def _relative_datetime(
@@ -163,6 +223,22 @@ class DirectReminderParser:
             match = regex.search(lower)
             if match:
                 return tz.normalize(now + timedelta(**{unit: int(match.group(1))})), match.group(0)
+
+        calendar_duration = _CALENDAR_DURATION_RE.search(lower)
+        if calendar_duration:
+            quantity = self._parse_duration_quantity(calendar_duration.group("quantity"))
+            if quantity is not None:
+                unit = calendar_duration.group("unit")
+                if unit.startswith("д"):
+                    target_day = now.date() + timedelta(days=quantity)
+                elif unit.startswith("меся"):
+                    target_day = self._add_months(now.date(), quantity)
+                else:
+                    target_day = self._add_months(now.date(), quantity * 12)
+                return (
+                    self._at_local_time(tz, target_day, now.hour, now.minute),
+                    calendar_duration.group(0),
+                )
 
         if "послезавтра" in lower:
             return self._at_local_time(
@@ -198,9 +274,39 @@ class DirectReminderParser:
         return None
 
     @staticmethod
-    def _find_clock_period_suffix(text: str) -> str | None:
+    def _parse_duration_quantity(value: str | None) -> int | None:
+        """Return a positive integer from a numeric or Russian-word duration."""
+        if value is None:
+            return 1
+        if value.isdigit():
+            quantity = int(value)
+            return quantity if quantity > 0 else None
+
+        parts = value.split()
+        if len(parts) == 1:
+            return _RUSSIAN_ONES.get(parts[0]) or _RUSSIAN_TENS.get(parts[0])
+        if len(parts) == 2:
+            tens = _RUSSIAN_TENS.get(parts[0])
+            ones = _RUSSIAN_ONES.get(parts[1])
+            if tens and ones and ones < 10:
+                return tens + ones
+        return None
+
+    @staticmethod
+    def _add_months(day: date, months: int) -> date:
+        """Add calendar months, clamping to the target month's last day."""
+        target_month_index = day.month - 1 + months
+        year = day.year + target_month_index // 12
+        month = target_month_index % 12 + 1
+        return date(year, month, min(day.day, monthrange(year, month)[1]))
+
+    @staticmethod
+    def _find_clock_period_suffix(text: str, clock: re.Match[str] | None) -> str | None:
+        if clock is None:
+            return None
+        following_text = text[clock.end() :]
         for suffix in _CLOCK_PERIOD_SUFFIXES:
-            if re.search(rf"\b{re.escape(suffix)}\b", text):
+            if re.match(rf"\s+{re.escape(suffix)}\b", following_text):
                 return suffix
         return None
 
