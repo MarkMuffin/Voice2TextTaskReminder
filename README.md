@@ -38,6 +38,20 @@ Output
 | `app/scheduler/` | APScheduler reminder firing |
 | `app/container.py` | DI container — wires everything together |
 
+## Command parsing: direct parser and LLM
+
+`CaptureService` first tries the local `DirectReminderParser`, then delegates to the LLM only when the local parser declines the command. The direct parser handles unambiguous one-off Russian `напомни` commands without a network call; recurring, task-management, incomplete, and unclear commands go to the LLM.
+
+For numeric dates, the contract is intentionally strict: `DD.MM[.YYYY]` is a reminder date only when it appears in the command slot immediately after `напомни` (allowing the filler words `мне` and `пожалуйста`). The same text elsewhere remains part of the task title, so quantities and version numbers cannot silently become dates.
+
+| Command | Result |
+|---------|--------|
+| `Напомни 12.08 сходить в казино` | Reminder on 12 August (09:00 if no time is given) |
+| `Напомни мне 12.08 купить молоко` | Reminder on 12 August; `мне` is ignored |
+| `Напомни сходить в казино 12.08` | Unscheduled task; `12.08` stays in the title |
+| `Напомни обновить Python 3.11` | Unscheduled task; `3.11` stays in the title |
+| `Напомни 12 августа сходить в казино` | Reminder on 12 August; month-name dates are unambiguous |
+
 ## Setup
 
 ### 1. Install dependencies
