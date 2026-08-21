@@ -18,6 +18,9 @@ from app.utils.time_utils import _TIME_KEYWORDS
 
 _REMINDER_RE = re.compile(r"\bнапомни(?:ть)?(?:-ка)?\b", re.IGNORECASE)
 _RECURRING_RE = re.compile(r"\b(?:кажд(?:ый|ую|ое)|ежедневно|еженедельно|раз\s+в)\b", re.IGNORECASE)
+_FILLER_WORDS = r"(?:мне|пожалуйста)"
+_COMMAND_SLOT_RE = re.compile(rf"^[\s,.;:!?]*(?:{_FILLER_WORDS}[\s,.;:!?]+)*$", re.IGNORECASE)
+_TITLE_FILLERS_RE = re.compile(rf"^(?:{_FILLER_WORDS}[\s,.;:!?]+)+", re.IGNORECASE)
 _CLOCK_RE = re.compile(r"\b(?:в\s+)?([01]?\d|2[0-3])(?::([0-5]\d))?\b", re.IGNORECASE)
 _IN_MINUTES_RE = re.compile(r"\bчерез\s+(\d+)\s+(?:минут(?:у|ы)?|мин)\b", re.IGNORECASE)
 _IN_HOURS_RE = re.compile(r"\bчерез\s+(\d+)\s+(?:час(?:а|ов)?|ч)\b", re.IGNORECASE)
@@ -69,6 +72,42 @@ _CALENDAR_DURATION_RE = re.compile(
 )
 _THROUGH_RE = re.compile(r"\bчерез\b", re.IGNORECASE)
 _CLOCK_PERIOD_SUFFIXES = ("утра", "дня", "вечера", "ночи")
+_NUMERIC_DATE_RE = re.compile(
+    r"\b(?P<day>0?[1-9]|[12]\d|3[01])\.(?P<month>0?[1-9]|1[0-2])"
+    r"(?:\.(?P<year>\d{2}|\d{4}))?\b"
+)
+_MONTHS = {
+    "январь": 1,
+    "января": 1,
+    "февраль": 2,
+    "февраля": 2,
+    "март": 3,
+    "марта": 3,
+    "апрель": 4,
+    "апреля": 4,
+    "май": 5,
+    "мая": 5,
+    "июнь": 6,
+    "июня": 6,
+    "июль": 7,
+    "июля": 7,
+    "август": 8,
+    "августа": 8,
+    "сентябрь": 9,
+    "сентября": 9,
+    "октябрь": 10,
+    "октября": 10,
+    "ноябрь": 11,
+    "ноября": 11,
+    "декабрь": 12,
+    "декабря": 12,
+}
+_MONTH_DATE_RE = re.compile(
+    rf"\b(?P<day>0?[1-9]|[12]\d|3[01])(?:-?го)?\s+"
+    rf"(?P<month>{'|'.join(_MONTHS)})"
+    r"(?:\s+(?P<year>\d{4})(?:\s*г(?:ода|\.)?)?)?\b",
+    re.IGNORECASE,
+)
 
 _WEEKDAYS = {
     "понедельник": 0,
@@ -135,19 +174,27 @@ class DirectReminderParser:
         lower = text.lower()
         fragments: list[str] = []
 
-        relative = self._relative_datetime(lower, now, tz)
+        absolute = self._absolute_date(text, now.date())
+        if absolute is not None:
+            target_day, phrase = absolute
+            dt = self._at_local_time(tz, target_day, now.hour, now.minute)
+            fragments.append(phrase)
+        else:
+            dt = None
+
+        relative = None if absolute is not None else self._relative_datetime(lower, now, tz)
         has_relative_duration = bool(
             _COMPOUND_DURATION_RE.search(lower)
             or _IN_MINUTES_RE.search(lower)
             or _IN_HOURS_RE.search(lower)
             or _CALENDAR_DURATION_RE.search(lower)
         )
-        has_calendar_date = relative is not None and not has_relative_duration
+        has_calendar_date = absolute is not None or (
+            relative is not None and not has_relative_duration
+        )
         if relative is not None:
             dt, phrase = relative
             fragments.append(phrase)
-        else:
-            dt = None
 
         clock = next(
             (match for match in _CLOCK_RE.finditer(lower) if self._is_clock_match(match)), None
@@ -182,7 +229,7 @@ class DirectReminderParser:
             assert clock is not None and dt is not None
             clock_hour = int(clock.group(1))
             hour_with_period = self._hour_with_period(clock_hour, period_suffix)
-            target_date = dt.date() if relative is not None else now.date()
+            target_date = dt.date() if absolute is not None or relative is not None else now.date()
             dt = self._at_local_time(tz, target_date, hour_with_period, int(clock.group(2) or 0))
             if not has_calendar_date and dt <= now:
                 dt = self._at_local_time(
@@ -207,6 +254,65 @@ class DirectReminderParser:
         if dt is not None and "сегодня" in lower and dt <= now:
             dt = self._at_local_time(tz, dt.date() + timedelta(days=1), dt.hour, dt.minute)
         return dt, fragments
+
+    @staticmethod
+    def _absolute_date(text: str, today: date) -> tuple[date, str] | None:
+        """Parse an explicit calendar date and choose its next occurrence if year is omitted."""
+        for numeric_match in _NUMERIC_DATE_RE.finditer(text):
+            if not DirectReminderParser._is_unambiguous_numeric_date(text, numeric_match):
+                continue
+            day, month = int(numeric_match.group("day")), int(numeric_match.group("month"))
+            year_text = numeric_match.group("year")
+            year = int(year_text) if year_text else today.year
+            if year_text and len(year_text) == 2:
+                year += 2000
+            absolute = DirectReminderParser._build_absolute_date(
+                day, month, year, bool(year_text), today, numeric_match.group(0)
+            )
+            if absolute is not None:
+                return absolute
+
+        month_match = _MONTH_DATE_RE.search(text)
+        if month_match:
+            day = int(month_match.group("day"))
+            month = _MONTHS[month_match.group("month").lower()]
+            year_text = month_match.group("year")
+            year = int(year_text) if year_text else today.year
+            return DirectReminderParser._build_absolute_date(
+                day, month, year, bool(year_text), today, month_match.group(0)
+            )
+        return None
+
+    @staticmethod
+    def _is_unambiguous_numeric_date(text: str, match: re.Match[str]) -> bool:
+        """Only accept a short numeric date in the unambiguous command slot.
+
+        Expressions such as ``1/2``, ``3-4``, and ``3.11`` are common task-title
+        content. A date like ``12.08`` is accepted only in the command slot:
+        immediately after ``напомни``, optionally separated by the filler words
+        ``мне`` and ``пожалуйста``. Numeric expressions elsewhere in the task
+        title are deliberately not treated as dates.
+        """
+        command = _REMINDER_RE.search(text)
+        if command is None:
+            return False
+        between_command_and_date = text[command.end() : match.start()]
+        return bool(_COMMAND_SLOT_RE.fullmatch(between_command_and_date))
+
+    @staticmethod
+    def _build_absolute_date(
+        day: int, month: int, year: int, has_year: bool, today: date, phrase: str
+    ) -> tuple[date, str] | None:
+        try:
+            target = date(year, month, day)
+        except ValueError:
+            return None
+        if not has_year and target < today:
+            try:
+                target = date(year + 1, month, day)
+            except ValueError:
+                return None
+        return target, phrase
 
     def _relative_datetime(
         self, lower: str, now: datetime, tz: pytz.BaseTzInfo
@@ -346,5 +452,5 @@ class DirectReminderParser:
         for fragment in fragments:
             title = re.sub(re.escape(fragment), " ", title, flags=re.IGNORECASE)
         title = re.sub(r"\s+", " ", title).strip(" ,.;:!?")
-        title = re.sub(r"^(?:мне\s+|пожалуйста\s+)", "", title, flags=re.IGNORECASE)
+        title = _TITLE_FILLERS_RE.sub("", title)
         return title.strip(" ,.;:!?")

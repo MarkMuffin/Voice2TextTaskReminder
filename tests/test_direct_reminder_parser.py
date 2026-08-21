@@ -41,6 +41,77 @@ def test_uses_default_time_for_weekday(parser):
     assert intent.remind_at == "2026-07-31T09:00:00+03:00"
 
 
+@pytest.mark.parametrize(
+    ("text", "expected_title", "expected_remind_at"),
+    [
+        (
+            "Напомни 28 августа сходить в казино",
+            "сходить в казино",
+            "2026-08-28T09:00:00+03:00",
+        ),
+        (
+            "Напомни 28.08 в 19:30 сходить в казино",
+            "сходить в казино",
+            "2026-08-28T19:30:00+03:00",
+        ),
+        ("Напомни 12.08 сходить в казино", "сходить в казино", "2026-08-12T09:00:00+03:00"),
+        ("Напомни мне 12.08 купить молоко", "купить молоко", "2026-08-12T09:00:00+03:00"),
+        (
+            "Напомни, пожалуйста, 12.08 купить молоко",
+            "купить молоко",
+            "2026-08-12T09:00:00+03:00",
+        ),
+        (
+            "Напомни 12.08.2027 сходить в казино",
+            "сходить в казино",
+            "2027-08-12T09:00:00+03:00",
+        ),
+        (
+            "Напомни 28 августа 2027 года сходить в казино",
+            "сходить в казино",
+            "2027-08-28T09:00:00+03:00",
+        ),
+    ],
+)
+def test_parses_explicit_calendar_dates(parser, text, expected_title, expected_remind_at):
+    intent = parser.parse(text, "Europe/Tallinn")
+
+    assert intent is not None
+    assert intent.title == expected_title
+    assert intent.remind_at == expected_remind_at
+
+
+def test_yearless_explicit_date_uses_next_year_when_this_year_has_passed():
+    tz = pytz.timezone("Europe/Tallinn")
+    parser = DirectReminderParser(now=lambda _: tz.localize(datetime(2026, 8, 29, 12, 0)))
+
+    intent = parser.parse("Напомни 28.08 сходить в казино", "Europe/Tallinn")
+
+    assert intent is not None
+    assert intent.remind_at == "2027-08-28T09:00:00+03:00"
+
+
+# Numeric-date contract: DD.MM[.YYYY] is a date only directly after "напомни".
+# The exact same text elsewhere is part of the task title, never a reminder time.
+@pytest.mark.parametrize(
+    ("text", "expected_title"),
+    [
+        ("Напомни сходить в казино 12.08", "сходить в казино 12.08"),
+        ("Напомни обновить до версии 12.08", "обновить до версии 12.08"),
+        ("Напомни купить 1/2 стакана муки", "купить 1/2 стакана муки"),
+        ("Напомни купить 3-4 упаковки молока", "купить 3-4 упаковки молока"),
+        ("Напомни обновить python 3.11", "обновить python 3.11"),
+        ("Напомни оплатить счет за 2.5 часа работы", "оплатить счет за 2.5 часа работы"),
+    ],
+)
+def test_keeps_non_command_slot_numbers_in_task_title(parser, text, expected_title):
+    intent = parser.parse(text, "Europe/Tallinn")
+
+    assert intent is not None
+    assert intent.title == expected_title
+    assert intent.remind_at is None
+
+
 def test_uses_default_time_when_title_contains_a_number(parser):
     intent = parser.parse("Напомни завтра купить 2 литра молока", "Europe/Tallinn")
 
@@ -213,43 +284,51 @@ def test_weekend_means_next_saturday(parser):
     assert intent.remind_at == "2026-08-01T09:00:00+03:00"
 
 
-class _FailingParser(BaseIntentParser):
-    async def parse(self, text: str, timezone: str = "Europe/Amsterdam"):
-        raise AssertionError("LLM must not be called for a direct reminder")
-
-
 class _TrackingParser(BaseIntentParser):
-    def __init__(self) -> None:
+    def __init__(self, response: ParsedIntent) -> None:
         self.called = False
+        self.response = response
 
     async def parse(self, text: str, timezone: str = "Europe/Amsterdam") -> ParsedIntent:
         self.called = True
-        return ParsedIntent(intent=IntentType.UNKNOWN, confidence=1.0)
+        return self.response
 
 
 @pytest.mark.asyncio
-async def test_capture_service_skips_llm_for_direct_reminder(container):
-    container.capture_service._llm = _FailingParser()
+@pytest.mark.parametrize(
+    ("text", "expected_intent", "should_call_llm"),
+    [
+        # One-off reminders with one deterministic schedule stay local.
+        ("Напомни завтра в 15 оплатить интернет", IntentType.CREATE_REMINDER, False),
+        ("Напомни 28 августа сходить в казино", IntentType.CREATE_REMINDER, False),
+        ("Напомни 12.08 сходить в казино", IntentType.CREATE_REMINDER, False),
+        ("Напомни мне 12.08 купить молоко", IntentType.CREATE_REMINDER, False),
+        ("Напомни сходить в казино 12.08", IntentType.CREATE_REMINDER, False),
+        ("Напомни купить молоко", IntentType.CREATE_REMINDER, False),
+        # Ambiguous, recurring, and task-management commands go to the LLM.
+        ("Напомни через несколько дней купить подарок", IntentType.UNKNOWN, True),
+        ("Напомни купить 1/2 стакана муки", IntentType.CREATE_REMINDER, False),
+        ("Напомни купить 3-4 упаковки молока", IntentType.CREATE_REMINDER, False),
+        ("Напомни обновить python 3.11", IntentType.CREATE_REMINDER, False),
+        ("Напомни оплатить счет за 2.5 часа работы", IntentType.CREATE_REMINDER, False),
+        ("Каждую пятницу напомни оплатить интернет", IntentType.CREATE_RECURRING_TASK, True),
+        ("Покажи мои задачи", IntentType.LIST_TASKS, True),
+        ("Отмени напоминание про казино", IntentType.CANCEL_TASK, True),
+        ("Напомни завтра", IntentType.UNKNOWN, True),
+    ],
+)
+@pytest.mark.asyncio
+async def test_capture_service_intent_routing_contract(
+    container, text, expected_intent, should_call_llm
+):
+    llm = _TrackingParser(ParsedIntent(intent=expected_intent, confidence=1.0))
+    container.capture_service._llm = llm
 
     intent = await container.capture_service.process_text(
         user_id="direct-parser-user",
-        text="Напомни завтра в 15 оплатить интернет",
+        text=text,
         timezone="Europe/Tallinn",
     )
 
-    assert intent.title == "оплатить интернет"
-    assert intent.remind_at is not None
-
-
-@pytest.mark.asyncio
-async def test_capture_service_routes_unknown_relative_duration_to_llm(container):
-    llm = _TrackingParser()
-    container.capture_service._llm = llm
-
-    await container.capture_service.process_text(
-        user_id="direct-parser-user",
-        text="Напомни через несколько дней купить подарок",
-        timezone="Europe/Tallinn",
-    )
-
-    assert llm.called is True
+    assert intent.intent == expected_intent
+    assert llm.called is should_call_llm
